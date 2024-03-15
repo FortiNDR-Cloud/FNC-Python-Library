@@ -1,0 +1,864 @@
+
+import traceback
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+from requests.exceptions import *
+
+from .endpoints import *
+from .errors import ErrorMessages, ErrorType, FncApiClientError
+from .global_variables import *
+from .logger import BasicLogger, FncApiClientLogger
+from .rest_clients import BasicRestClient, FncRestClient
+from .utils import *
+
+
+class Context:
+    checkpoint: str
+    args: dict
+
+    def __init__(self):
+        self.args = {}
+        self.checkpoint = ''
+
+    def update_args(self, args: dict):
+        self.args = args or None
+
+    def get_polling_args(self):
+        return self.args
+
+    def update_checkpoint(self, checkpoint: str):
+        self.checkpoint = checkpoint
+
+    def get_checkpoint(self):
+        return self.checkpoint
+
+    def clear_args(self):
+        self.args = {}
+
+
+class FncApiClient:
+
+    supported_api: list[FncApi] = [SensorApi(), DetectionApi(), EntityApi()]
+
+    domain: str
+    protocol: str = CLIENT_PROTOCOL
+    api_token: str
+    user_agent: str
+    rest_client: FncRestClient
+    logger: FncApiClientLogger
+    default_control_args: dict
+
+    def __init__(
+        self,
+        api_token: str = None,
+        domain: str = CLIENT_DEFAULT_DOMAIN,
+        agent_suffix: str = None,
+        rest_client: FncRestClient = None,
+        logger: FncApiClientLogger = None
+    ):
+        self.user_agent = f"{CLIENT_DEFAULT_USER_AGENT}-{agent_suffix}" if agent_suffix else CLIENT_DEFAULT_USER_AGENT
+        self.logger = logger or BasicLogger(name=self.user_agent)
+
+        self.rest_client = rest_client or BasicRestClient()
+        self.rest_client.set_logger(self.logger)
+
+        self.logger.info(f"Initializing {CLIENT_NAME} version {CLIENT_VERSION}.")
+
+        self.api_token = api_token
+        self.domain = domain
+
+        self.set_default_control_args()
+
+        self.logger.info(f"User_Agent was set to: {self.user_agent}")
+        self._validate_api_token()
+
+    def _validate_api_token(self):
+        """
+        This method perform a call to the Get_Detections endpoint with limit =1 to validate
+        the provided API Token
+        """
+        self.logger.info("Verifying API Token.")
+
+        # Call Get_Detections endpoint with limit = 1
+        try:
+            _ = self.call_endpoint(EndpointKey.GET_DETECTIONS, {'limit': 1})
+            self.logger.info("The API Token has been successfully validated.")
+        except FncApiClientError as e:
+            self.logger.error(f"API Token validation failed due to {e}.")
+            raise FncApiClientError(
+                error_type=ErrorType.CLIENT_API_TOKEN_VALIDATION_ERROR,
+                error_message=ErrorMessages.CLIENT_API_TOKEN_VALIDATION_ERROR,
+                error_data={'error': e},
+                exception=e
+            )
+
+    def get_logger(self):
+        return self.logger
+
+    def get_url(self, e: Endpoint, api: FncApi, url_args: dict = {}) -> str:
+        """
+        This method construct the full url by gathering all the required information from the API and the endpoint 
+        and evaluating any existing argument in the url.
+
+        Args:
+            e (Endpoint): The definition of the endpoint that want to be reached with this url.
+            api (FncApi): The definition of the API supporting the provided endpoint
+            url_args (dict, optional): the values for any existing argument in the url. Defaults to {}.
+
+        Raises:
+            FncApiClientError: Error_Type.API_VALIDATION_ERROR is raised if the provided API does not have the attribute name defined.
+            FncApiClientError: Error_Type.ENDPOINT_VALIDATION_ERROR is raised if the url part of the endpoint cannot be retrieved.
+
+        Returns:
+            str: Returns the full url to reach the provided endpoint after evaluate any existing argument.
+        """
+        try:
+            api_name = api.get_name()
+
+            # Verify that the API's name was defined
+            if not api_name:
+                self.logger.error(
+                    f"The API supporting endpoint {e.get_endpoint_key().name} is missing its name. \n" +
+                    "The API's name is required to form the endpoint url."
+                )
+
+                raise KeyError(["API's name"])
+
+            # Verify that the endpoint's url was defined
+            endpoint = e.get_url()
+
+            # Prepare the url
+            if self.domain.startswith('-uat'):
+                # To allow use of uat environment
+                url = f"{self.protocol}://{api_name}{self.domain}/{endpoint}"
+            else:
+                url = f"{self.protocol}://{api_name}.{self.domain}/{endpoint}"
+
+            full_url = ""
+
+            # Evaluate any argument present in the url and return the resulted full url
+            full_url = url.format(**url_args)
+            self.logger.debug(f"URL successfully created: [{url}]")
+        except KeyError as ex:
+            # Some of the required arguments to format the url were not provided
+            raise FncApiClientError(
+                error_type=ErrorType.ENDPOINT_VALIDATION_ERROR,
+                error_message=ErrorMessages.ENDPOINT_URL_CANNOT_BE_FORMED,
+                error_data={'endpoint': e.get_endpoint_key().name,
+                            'error': ex},
+                exception=ex
+            )
+        return full_url
+
+    def get_endpoint_if_supported(self, endpoint: str | EndpointKey) -> tuple[Endpoint, FncApi]:
+        """
+        This method verify if the endpoint is supported by any of the defined APIs.
+        If the endpoint is supported the endpoint's definition and the API are returned.
+
+        Args:
+            endpoint (str | EndpointKey): The endpoint to be retrieved. It can be passed as the EndpointKey or just the name.
+
+        Raises:
+            FncApiClientError: Error_Type ENDPOINT_ERROR if the Endpoint was not provided, defined or it is not supported.
+            FncApiClientError: Error_Type ENDPOINT_VALIDATION_ERROR if the provided endpoint is supported by most than one API.
+
+        Returns:
+            tuple[Endpoint, FncApi]: Returns the Endpoint's definition and the API that supports it
+        """
+
+        k = None
+        api: FncApi = None
+
+        # Raise unsupported Error if no endpoint was provided
+        if not endpoint:
+            self.logger.error("The endpoint was not provided")
+            raise FncApiClientError(
+                error_type=ErrorType.ENDPOINT_ERROR,
+                error_message=ErrorMessages.ENDPOINT_NOT_SUPPORTED,
+                error_data={'endpoint': ''}
+            )
+
+        # Get the EndpointKey if it was provided as str
+        if isinstance(endpoint, str):
+            endpoint = endpoint.title()
+            self.logger.debug(f"Retrieving endpoint {endpoint}")
+
+            try:
+                # Verify the EndpointKey was defined for the received endpoint
+                k = EndpointKey(endpoint)
+            except:
+                # Raise unsupported Error if the endpoint has not been defined
+                self.logger.error(f"The endpoint ({endpoint}) is not defined. Verify that the spelling correspond with the EndpointKey.")
+                raise FncApiClientError(
+                    error_type=ErrorType.ENDPOINT_ERROR,
+                    error_message=ErrorMessages.ENDPOINT_NOT_SUPPORTED,
+                    error_data={'endpoint': endpoint}
+                )
+        else:
+            self.logger.debug(f"Retrieving endpoint {endpoint.name}")
+            k = endpoint
+
+        # Get any API supporting the provided endpoint
+        filtered: list = list(
+            filter(lambda a: k in a.get_supported_endpoints(), self.supported_api))
+        # filtered: list = [
+        #     supported_endpoint for supported_api in self.supported_api
+        #     for supported_endpoint in supported_api.get_supported_endpoints()
+        # ]
+
+        for a in filtered:
+            if api:
+                # Raise a Validation Error if the endpoint is supported by most than one API.
+                raise FncApiClientError(
+                    error_type=ErrorType.ENDPOINT_VALIDATION_ERROR,
+                    error_message=ErrorMessages.ENDPOINT_MULTIPLE_SUPPORTED,
+                    error_data={'endpoint': k}
+                )
+            api = a
+
+        if api:
+            e: Endpoint = api.get_supported_endpoints()[k]
+            e.set_Logger(self.logger)
+            return e, api
+        else:
+            # Raise Unsupported Error since the endpoint is not supported.
+            raise FncApiClientError(
+                error_type=ErrorType.ENDPOINT_ERROR,
+                error_message=ErrorMessages.ENDPOINT_NOT_SUPPORTED,
+                error_data={'endpoint': endpoint}
+            )
+
+    def _get_headers(self) -> dict:
+        """
+        This method returns the dictionary containing all the required headers.
+
+        Returns:
+            dict: Dictionary containing the headers
+        """
+        return {
+            'Authorization': f'IBToken {self.api_token}',
+            'User-Agent': self.user_agent,
+            'Content-Type': 'application/json',
+        }
+
+    def set_default_control_args(self, args: dict = None):
+        self.default_control_args: dict = {
+            'method': 'GET',
+            'verify': REQUEST_DEFAULT_VERIFY,
+            'timeout': REQUEST_DEFAULT_TIMEOUT,
+        }
+        if args:
+            self.default_control_args = {**self.default_control_args, **args}
+
+    def get_default_control_args(self) -> dict:
+        """
+        This method returns a dictionary containing all the default control arguments used by the client.
+
+        Returns:
+            dict: Dictionary containing the default control arguments
+        """
+        args = self.default_control_args.copy()
+        args.update({'headers': self._get_headers()})
+        return args
+
+    def _prepare_request(self, endpoint: str | EndpointKey, args: dict) -> tuple[Endpoint, dict]:
+        """
+        This method receive an endpoint and a dictionary of arguments it then verify that the endpoint is supported, 
+        that any required argument is present and that there is no unexpected argument. If the validation is passed,
+        the arguments are separated as per where are they expected and the full url is computed replacing any argument
+        with its value.
+
+        Args:
+            endpoint (str | EndpointKey): endpoint to be called
+            args (dict): arguments to be passed with the request
+
+        Raises:
+            FncApiClientError: Reraise any exception raised during the endpoint validation or the calculation of the full url.
+
+        Returns:
+            tuple[Endpoint, dict]: Returns the definition of the endpoint to be called and a dictionary with the arguments splitted as: 
+            'url_args', 'query_args', 'body_args' and 'control_args'
+        """
+        e: Endpoint = None
+        api: FncApi = None
+
+        self.logger.debug(f'Preparing request to endpoint {endpoint}')
+        # Verify the endpoint is supported
+        try:
+            e, api = self.get_endpoint_if_supported(endpoint)
+
+            #  Evaluate and Validate the Endpoint
+            e_args = e.evaluate(args=args.copy())
+
+            e.validate(to_validate=e_args)
+
+            # Gather all the request's control arguments
+            control_args = self.get_default_control_args()
+            if 'control_args' in e_args:
+                # Adding the control's arguments received from the endpoint since they take precedence
+                control_args.update(e_args['control_args'])
+                e_args['control_args'] = control_args
+
+            # Compute and update the url with api and endpoint information
+            url_args = e_args.get('url_args', {})
+            full_url = self.get_url(e=e, api=api, url_args=url_args)
+            e_args['control_args']['url'] = full_url
+        except FncApiClientError as ex:
+            self.logger.error(f"Request preparation failed for endpoint {e.get_endpoint_key().name} due to {ex}")
+            raise ex
+        except Exception as ex:
+            self.logger.error(
+                f"Request preparation failed unexpectedly.\n [{str(ex)}]")
+            raise FncApiClientError(
+                error_type=ErrorType.GENERIC_ERROR,
+                error_message=ErrorMessages.GENERIC_ERROR_MESSAGE,
+                error_data={'error': ex},
+                exception=ex
+            )
+
+        return (e, e_args)
+
+    def _get_rest_client_arguments(self, req_args: dict = None, query_args: dict = None, body_args: Any = None) -> dict:
+        """
+        This method get the request arguments and create a new dictionary with the arguments as they are expected by the Rest Client.
+
+        Args:
+            req_args (dict, optional): Arguments that control the request. Defaults to None.
+            query_args (dict, optional): Arguments to be passed in the query string. Defaults to None.
+            body_args (Any, optional): Arguments to be passed in the body. Defaults to None.
+
+        Returns:
+            dict: New dictionary with the arguments as they are expected by the Rest Client
+        """
+        requests_args = {}
+        requests_args.update(req_args)
+        if query_args:
+            requests_args['params'] = query_args
+        if body_args:
+            if isinstance(body_args, (dict, list)):
+                requests_args['json'] = body_args
+            else:
+                requests_args['data'] = str(body_args)
+        return requests_args
+
+    def _map_error(self, error: Exception) -> FncApiClientError:
+        masked_url = '???'
+
+        if isinstance(error, FncApiClientError):
+            return error
+        elif isinstance(error, ConnectionError):
+            return FncApiClientError(
+                ErrorType.REQUEST_CONNECTION_ERROR,
+                ErrorMessages.REQUEST_CONNECTION_ERROR,
+                {'url': masked_url, 'error': error}
+            )
+        elif isinstance(error, Timeout):
+            return FncApiClientError(
+                ErrorType.REQUEST_TIMEOUT_ERROR,
+                ErrorMessages.REQUEST_TIMEOUT_ERROR,
+                {'url': masked_url, 'error': error}
+            )
+        elif isinstance(error, HTTPError):
+            return FncApiClientError(
+                ErrorType.REQUEST_HTTP_ERROR,
+                ErrorMessages.REQUEST_HTTP_ERROR,
+                {'url': masked_url, 'error': error}
+            )
+        elif isinstance(error, RequestException):
+            return FncApiClientError(
+                ErrorType.REQUEST_ERROR,
+                ErrorMessages.REQUEST_ERROR,
+                {'url': masked_url, 'error': error}
+            )
+        else:
+            return FncApiClientError(
+                ErrorType.GENERIC_ERROR,
+                ErrorMessages.GENERIC_ERROR_MESSAGE,
+                {'error': error}
+            )
+
+    def _is_retry_needed(self, error: Exception, attempt: int) -> bool:
+        need_retry = False
+
+        if error:
+            if not isinstance(error, FncApiClientError):
+                error = self._map_error(error)
+
+            if error.error_type == ErrorType.ENDPOINT_RESPONSE_VALIDATION_ERROR:
+                status = error.error_data.get('status', None)
+                need_retry = not status or status >= 500
+            else:
+                need_retry: bool = error.error_type in [
+                    ErrorType.REQUEST_CONNECTION_ERROR,
+                    ErrorType.REQUEST_TIMEOUT_ERROR,
+                    ErrorType.GENERIC_ERROR
+                ]
+
+        return need_retry and attempt <= REQUEST_MAXIMUM_RETRY_ATTEMPT
+
+    def call_endpoint(self, endpoint: str | EndpointKey, args: dict) -> dict:
+        """
+        This method receives an endpoint and a dictionary of arguments. It will prepare
+        and send the request to the received endpoint as well as validate the returned
+        response returning the json response if it is valid
+
+        Args:
+            endpoint (str | EndpointKey): Endpoint to where to send the request
+            args (dict): dictionary with all the argument's values that need to passed with the request
+
+        Raises:
+            FncApiClientError: If anything fails during the request
+
+        Returns:
+            dict:  Response's json
+        """
+        need_retry = False
+        attempt = 0
+
+        args = args or {}
+        args = args.copy()
+
+        while attempt == 0 or need_retry:
+            if need_retry:
+                self.logger.info(f"Retrying...... [attempt #{attempt}]")
+
+            response = None
+            error = None
+
+            e: Endpoint = None
+            try:
+                e, e_args = self._prepare_request(endpoint=endpoint, args=args)
+                req_args = self._get_rest_client_arguments(
+                    req_args=e_args['control_args'], body_args=e_args['body_args'], query_args=e_args['query_args']
+                )
+
+                self.logger.info(f"Sending request to {e.get_endpoint_key().name} endpoint.")
+
+                self.rest_client.validate_request(req_args)
+                response = self.rest_client.send_request(req_args=req_args)
+
+                res_json = e.validate_response(response)
+                self.logger.info("Response successfully validated.")
+
+            except Exception as ex:
+                self.logger.error(f"The request to {e.get_endpoint_key().name} endpoint failed due to:")
+                self.logger.error("\n".join(traceback.format_exception(ex)))
+                error = ex
+
+            attempt += 1
+            need_retry = self._is_retry_needed(error, attempt)
+
+        if error:
+            if attempt > REQUEST_MAXIMUM_RETRY_ATTEMPT:
+                self.logger.error(
+                    "Maximum number of retry attempts has been reached.")
+            raise self._map_error(error)
+
+        return res_json
+
+#######################################
+#
+#
+#   Continuous Polling Methods
+#
+#
+########################################
+
+    def _get_search_window(self, start_date_str: str = None, polling_delay: int = None, checkpoint: str = None) -> tuple[datetime, datetime]:
+
+        end_date = datetime.utcnow() - timedelta(minutes=polling_delay)
+
+        # We try to get the start_date from the arguments or the checkpoint. If none of them is provided we use the end_date as the first start_date
+        start_date_str = checkpoint or start_date_str or "7 days"
+        self.logger.debug(f"Getting search time window using start_date= {start_date_str} and polling_delay={polling_delay}")
+
+        if start_date_str:
+            start_date = str_to_utc_datetime(
+                start_date_str, DEFAULT_DATE_FORMAT)
+
+        return start_date, end_date
+
+    def get_default_polling_args(self) -> dict:
+        """
+        This method returns a dictionary containing all the default arguments for the continuous polling.
+
+        Returns:
+            dict: Dictionary containing the default arguments for the continuous polling
+        """
+        return {
+            'status': 'active',
+            'muted': False,
+            'muted_rule': False,
+            'muted_device': False,
+            'sort_by': 'device_ip',
+            'sort_order': 'asc',
+            'include': 'rules',
+            'limit': POLLING_MAX_DETECTIONS,
+            'offset': 0
+        }
+
+    def _prepare_continuous_polling(self, context: Context = None, args: dict = None) -> dict:
+        self.logger.info(
+            "Preparing arguments for continuously polling Detections.")
+
+        args = args or {}
+        polling_args: dict = None
+
+        if context and context.get_polling_args():
+            # Try to get polling arguments from the context and validate them
+            try:
+                polling_args = context.get_polling_args()
+                self._validate_continuous_polling_args(args=polling_args)
+                if 'offset' not in polling_args or polling_args['offset'] < 0:
+                    polling_args['offset'] = 0
+                self.logger.info(
+                    "Using arguments received in the context.\n" +
+                    "If this is not the expected behavior, ensure the context's args are cleared before polling."
+                )
+                return polling_args
+            except FncApiClientError as e:
+                self.logger.warn(
+                    f'Arguments contained in the context will be ignored due to: \n [{e}]')
+
+        # Getting arguments for the first call
+        polling_args: dict = self.get_default_polling_args()
+
+        polling_delay = args.get('polling_delay', POLLING_DEFAULT_DELAY)
+        checkpoint = context.checkpoint if context else None
+        start_date_str = args.get('start_date', '')
+
+        try:
+            start_date, end_date = self._get_search_window(
+                start_date_str=start_date_str, polling_delay=polling_delay, checkpoint=checkpoint)
+        except ValueError as e:
+            error_message = f"Provided start date {start_date_str} cannot be parsed."
+            raise FncApiClientError(
+                error_type=ErrorType.POLLING_TIME_WINDOW_ERROR,
+                error_message=ErrorMessages.POLLING_TIME_WINDOW_ERROR,
+                error_data={'error_message': error_message, 'error': e},
+                exception=e
+            )
+
+        if end_date < start_date:
+            raise FncApiClientError(
+                error_type=ErrorType.POLLING_INVALID_TIME_WINDOW_ERROR,
+                error_message=ErrorMessages.POLLING_INVALID_TIME_WINDOW_ERROR
+            )
+
+        polling_args['created_or_shared_start_date'] = datetime_to_utc_str(
+            start_date, DEFAULT_DATE_FORMAT)
+        polling_args['created_or_shared_end_date'] = datetime_to_utc_str(
+            end_date, DEFAULT_DATE_FORMAT)
+
+        if 'account_uuid' in args:
+            polling_args['account_uuid'] = args['account_uuid'],
+
+        muted_rules = str(args.get('pull_muted_rules',
+                          polling_args['muted_rule'])).lower()
+        if muted_rules == 'all':
+            polling_args.pop('muted_rule')
+        else:
+            polling_args['muted_rule'] = muted_rules
+
+        muted_devices = str(args.get('pull_muted_devices',
+                            polling_args['muted_device'])).lower()
+        if muted_devices == 'all':
+            polling_args.pop('muted_device')
+        else:
+            polling_args['muted_device'] = muted_devices
+
+        muted = str(args.get('pull_muted_detections',
+                    polling_args['muted'])).lower()
+        if muted == 'all':
+            polling_args.pop('muted')
+        else:
+            polling_args['muted'] = muted
+
+        status = str(args.get('status', polling_args['status'])).lower()
+        if status == 'all':
+            status = 'active,resolved'
+        polling_args['status'] = status
+        polling_args['offset'] = 0
+
+        self._validate_continuous_polling_args(args=polling_args)
+
+        return polling_args
+
+    def _validate_continuous_polling_args(self, args: dict):
+        self.logger.debug("Validating polling arguments.")
+        failed = []
+        # Verify Sort By is set to device_ip
+        sort_by = args.get('sort_by', None)
+        if not sort_by or sort_by != 'device_ip':
+            failed.append("The sort_by field need to be set to 'device_ip.\n")
+
+        muted_rule = args.get('muted_rule', None)
+        if muted_rule and muted_rule not in ['true', 'false']:
+            failed.append(
+                "The muted_rule allowed values are ['true', 'false'].\n")
+
+        muted_devices = args.get('muted_device', None)
+        if muted_devices and muted_devices not in ['true', 'false']:
+            failed.append(
+                "The muted_devices allowed values are ['true', 'false'].\n")
+
+        muted = args.get('muted', None)
+        if muted and muted not in ['true', 'false']:
+            failed.append("The muted allowed values are ['true', 'false'].\n")
+
+        status: str = args.get('status', None)
+        if not status:
+            args['status'] = 'active,resolved'
+        elif not all(s in ['active', 'resolved'] for s in status.split(',')):
+            failed.append(
+                "The status allowed values are ['active', 'resolved'].\n")
+
+        if 'created_or_shared_start_date' not in args or 'created_or_shared_end_date' not in args:
+            failed.append(
+                "The created_or_shared_start_date and created_or_shared_end_date are required.\n")
+
+        if failed:
+            raise FncApiClientError(
+                error_type=ErrorType.POLLING_VALIDATION_ERROR,
+                error_message=ErrorMessages.POLLING_VALIDATION_ERROR,
+                error_data={'failed': failed}
+            )
+        else:
+            self.logger.info("Polling arguments successfully validated.")
+
+    def _add_detection_rule(self, detection: dict, rules: dict, include_description: bool = False, include_signature: bool = False):
+        rule = rules[detection['rule_uuid']]
+
+        detection.update({'rule_name': rule['name']})
+        detection.update({'rule_severity': rule['severity']})
+        detection.update({'rule_confidence': rule['confidence']})
+        detection.update({'rule_category': rule['category']})
+
+        if include_description:
+            detection.update({'rule_description': rule['description']})
+
+        if include_signature:
+            detection.update({'rule_signature': rule['query_signature']})
+
+    def _get_entity_information(self, entity: str, fetch_pdns: bool = False, fetch_dhcp: bool = False, filter_training: bool = True) -> dict:
+        result: dict = {}
+        if not fetch_dhcp and not fetch_pdns:
+            return result
+
+        self.logger.debug(f'Retrieving information for entity {entity}.')
+
+        # Get PDNS/VT/DHCP info if requested
+        if fetch_pdns:
+            self.logger.debug("Fetching entity's PDNS information.")
+            try:
+                pdns_data = self.call_endpoint(
+                    EndpointKey.GET_ENTITY_PDNS, {'entity': entity})
+                if filter_training:
+                    pdns_data = filter(
+                        lambda v: v['account_uuid'] != POLLING_TRAINING_ACCOUNT_ID, pdns_data)
+
+                result.update({"PDNS": pdns_data})
+
+                self.logger.debug(
+                    "Entity's pdns information successfully retrieved.")
+            except FncApiClientError as e:
+                # If the request fails for a particular entity, we log it but continue with the execution.
+                self.logger.error(f"PDNS information for entity {entity} cannot be added due to:")
+                self.logger.error("\n".join(traceback.format_exception(e)))
+
+        if fetch_dhcp:
+            self.logger.debug("Fetching entity's DHCP information.")
+            try:
+                dhcp_data = self.call_endpoint(
+                    EndpointKey.GET_ENTITY_DHCP, {'entity': entity})
+                if filter_training:
+                    dhcp_data = filter(
+                        lambda v: v['customer_id'] != POLLING_TRAINING_CUSTOMER_ID, dhcp_data)
+
+                result.update({"dhcp": dhcp_data})
+
+                self.logger.debug(
+                    "Entity's DHCP information successfully retrieved.")
+            except FncApiClientError as e:
+                # If the request fails for a particular entity, we log it but continue with the execution.
+                self.logger.error(f"DHCP information for entity {entity} cannot be added due to:")
+                self.logger.error("\n".join(traceback.format_exception(e)))
+
+        return result
+
+    def _process_response(self, response: dict, args: dict = None):
+        # Getting instructions from the arguments
+        include_description = args.get('include_description', False)
+        include_signature = args.get('include_signature', False)
+        fetch_pdns = args.get('include_pdns', False)
+        fetch_dhcp = args.get('include_dhcp', False)
+        include_events = args.get('include_events', False)
+        filter_training = args.get('filter_training_detections', True)
+
+        detection_events = {}
+
+        dCount = len(response['detections']) if "detections" in response else 0
+        self.logger.info(f"Processing {dCount} retrieved detections.")
+
+        # create a dictionary with the rules to find detection's rule easily
+        response['rules'] = dict(
+            map(lambda rule: (rule['uuid'], rule),  response['rules']))
+
+        detection: dict
+
+        self.logger.info(" Enriching detections.")
+
+        # Adding rule's information to the detection
+        self.logger.debug("Adding rule's information.")
+
+        for detection in response['detections']:
+            self._add_detection_rule(
+                detection=detection,
+                rules=response['rules'],
+                include_description=include_description,
+                include_signature=include_signature
+            )
+        self.logger.info(
+            "Rules' information successfully added to the detections.")
+
+        # Enrich detection with additional entity's information
+
+        if fetch_dhcp or fetch_pdns:
+            self.logger.debug(
+                " Enriching detection with additional entity's information.")
+            for detection in response['detections']:
+                # Add the PDNS and DHCP information if requested
+                entity_info: dict = self._get_entity_information(
+                    entity=detection['device_ip'],
+                    fetch_dhcp=fetch_dhcp,
+                    fetch_pdns=fetch_pdns,
+                    filter_training=filter_training
+                )
+                detection.update(entity_info)
+
+            self.logger.info(
+                "Entity's information successfully added to the detections.")
+
+        # Add detection's associated events to the response
+        if include_events:
+            self.logger.debug("Adding Detection's associated events.")
+            failed = 0
+            total = 0
+            for detection in response['detections']:
+                total += 1
+                try:
+                    detection_events[detection['uuid']] = self._get_detection_events(
+                        detection['uuid'])
+                except FncApiClientError as e:
+                    failed += 1
+                    # If the request for associated events fails for a particular detection, we log it but continue with the execution.
+                    self.logger.error(f"Detection's events request for {detection['uuid']} failed due to:")
+                    self.logger.error("\n".join(traceback.format_exception(e)))
+
+            self.logger.info(f"Associated events for ({total - failed} out of {total}) detections were successfully added to the response.")
+
+        response['events'] = detection_events
+
+        return response
+
+    def _get_detection_events(self, detection_id: str) -> list:
+        detection_events = []
+        args = {
+            'detection_uuid': detection_id,
+            'offset': 0,
+            'limit': POLLING_MAX_DETECTION_EVENTS
+        }
+
+        response = {}
+        while 'events' not in response or response['events']:
+            try:
+                response = self.call_endpoint(
+                    endpoint=EndpointKey.GET_DETECTION_EVENTS, args=args)
+                args['offset'] = args.get(
+                    'offset', 0) + POLLING_MAX_DETECTION_EVENTS
+                detection_events.extend(response['events'])
+                count = len(detection_events)
+                if count:
+                    self.logger.debug(
+                        f"{count} Detection's associated events successfully retrieved for detection {detection_id}.")
+            except FncApiClientError as e:
+                raise e
+        return detection_events
+
+    def _get_detections(self, args: dict) -> dict:
+        start_date = args.get('created_or_shared_start_date', '')
+        end_date = args.get('created_or_shared_end_date', '')
+        offset = args.get('offset', 0)
+
+        self.logger.info(
+            f'Retrieving Detections between {start_date} and {end_date} and offset = {offset}.')
+
+        response = {}
+
+        # Retrieve detections
+        response = self.call_endpoint(
+            endpoint=EndpointKey.GET_DETECTIONS, args=args)
+
+        return response
+
+    def continuous_polling(self, context: Context = None, args: dict = None) -> dict:
+        self.logger.info("Starting continuous polling execution.")
+        args = args or {}
+        polling_args = {}
+
+        if not context:
+            self.logger.warn(
+                "No context has been provided. The provided start date ( 7 days ago by default) will be used.")
+            self.logger.info(
+                "The context is required to keep track of the latest checkpoint to avoid missing or duplicated detections.")
+        context = context or Context()
+
+        response = {}
+
+        while 'detections' not in response or response['detections']:
+            try:
+                # Prepare the arguments to be used for requesting detections
+                polling_args = self._prepare_continuous_polling(
+                    context=context, args=args)
+
+                # Update context with the latest used arguments
+                context.update_args(args=polling_args)
+                context.update_checkpoint(
+                    polling_args['created_or_shared_end_date'])
+
+                # Request detections
+                response = self._get_detections(polling_args.copy())
+
+                # Process the response enriching it if requested
+                self._process_response(response=response, args=args)
+
+                offset = polling_args.get('offset', 0)
+                polling_args['offset'] = offset + POLLING_MAX_DETECTIONS
+                context.update_args(args=polling_args)
+
+                yield response
+
+            except FncApiClientError as e:
+                self.logger.error(
+                    "Detections polling failed. " +
+                    f"If a context was provided, the arguments used for the latest call will be in the Context's args field.\n {polling_args}")
+                error_message = 'Detections cannot be pulled due to:'
+                if e.error_type != ErrorType.POLLING_INVALID_TIME_WINDOW_ERROR:
+                    self.logger.error(error_message)
+                    self.logger.error("\n".join(traceback.format_exception(e)))
+                    raise e
+                else:
+                    self.logger.info(f"{error_message} \n {str(e)}")
+            except Exception as e:
+                self.logger.error("Detections polling failed unexpectedly.")
+                self.logger.error("\n".join(traceback.format_exception(e)))
+                raise FncApiClientError(
+                    error_type=ErrorType.GENERIC_ERROR,
+                    error_message=ErrorMessages.GENERIC_ERROR_MESSAGE,
+                    error_data={'error': e},
+                    exception=e
+                )
+
+        self.logger.info(
+            "Continuous polling execution successfully completed.")

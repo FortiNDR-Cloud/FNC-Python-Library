@@ -1,12 +1,12 @@
 import time
 import unittest
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest import TestCase
 
-from metastream import fetch_events_by_day, fetch_events, fetch_detections, fetch_detections_by_day
-from metastream.errors import InputError, ServerError
-from metastream.metastream import _validate_start_date, _prefix_to_datetime
-from metastream.s3_client import Context
+from fnc.metastream import fetch_detections, fetch_detections_by_day, fetch_events, fetch_events_by_day
+from fnc.metastream.errors import InputError, ServerError
+from fnc.metastream.metastream import _prefix_to_datetime, _validate_start_date
+from fnc.metastream.s3_client import Context
 
 
 class Args:
