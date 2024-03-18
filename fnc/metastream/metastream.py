@@ -1,10 +1,10 @@
 import os.path
-from datetime import datetime, timedelta, timezone, date
+from datetime import date, datetime, timedelta, timezone
 from typing import List
 
-from .s3_client import S3Client, Context
 from .auth_client import Auth
 from .errors import InputError, ServerError
+from .s3_client import Context, S3Client
 
 EVENT_TYPES = ['suricata', 'observation']
 DEFAULT_BUCKET = {
