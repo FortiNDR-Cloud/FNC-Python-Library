@@ -1,37 +1,37 @@
 
 import traceback
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import datetime, timedelta
+from typing import Any, Iterator, List
 
 from requests.exceptions import *
 
+from ..errors import ErrorMessages, ErrorType, FncClientError
+from ..global_variables import *
+from ..logger import BasicLogger, FncClientLogger
+from ..utils import *
 from .endpoints import *
-from .errors import ErrorMessages, ErrorType, FncApiClientError
-from .global_variables import *
-from .logger import BasicLogger, FncApiClientLogger
 from .rest_clients import BasicRestClient, FncRestClient
-from .utils import *
 
 
 class Context:
-    checkpoint: str
-    args: dict
+    _checkpoint: str
+    _polling_args: dict
 
     def __init__(self):
-        self.args = {}
-        self.checkpoint = ''
+        self._polling_args = {}
+        self._checkpoint = ''
 
-    def update_args(self, args: dict):
-        self.args = args or None
+    def update_polling_args(self, args: dict):
+        self._polling_args = args or None
 
     def get_polling_args(self):
-        return self.args
+        return self._polling_args
 
     def update_checkpoint(self, checkpoint: str):
-        self.checkpoint = checkpoint
+        self._checkpoint = checkpoint
 
     def get_checkpoint(self):
-        return self.checkpoint
+        return self._checkpoint
 
     def clear_args(self):
         self.args = {}
@@ -46,18 +46,19 @@ class FncApiClient:
     api_token: str
     user_agent: str
     rest_client: FncRestClient
-    logger: FncApiClientLogger
+    logger: FncClientLogger
     default_control_args: dict
 
     def __init__(
         self,
+        name: str = None,
         api_token: str = None,
         domain: str = CLIENT_DEFAULT_DOMAIN,
-        agent_suffix: str = None,
         rest_client: FncRestClient = None,
-        logger: FncApiClientLogger = None
+        logger: FncClientLogger = None
     ):
-        self.user_agent = f"{CLIENT_DEFAULT_USER_AGENT}-{agent_suffix}" if agent_suffix else CLIENT_DEFAULT_USER_AGENT
+        name = f'{name}-api'
+        self.user_agent = f"{CLIENT_DEFAULT_USER_AGENT}-{name}"
         self.logger = logger or BasicLogger(name=self.user_agent)
 
         self.rest_client = rest_client or BasicRestClient()
@@ -84,9 +85,9 @@ class FncApiClient:
         try:
             _ = self.call_endpoint(EndpointKey.GET_DETECTIONS, {'limit': 1})
             self.logger.info("The API Token has been successfully validated.")
-        except FncApiClientError as e:
+        except FncClientError as e:
             self.logger.error(f"API Token validation failed due to {e}.")
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.CLIENT_API_TOKEN_VALIDATION_ERROR,
                 error_message=ErrorMessages.CLIENT_API_TOKEN_VALIDATION_ERROR,
                 error_data={'error': e},
@@ -98,7 +99,7 @@ class FncApiClient:
 
     def get_url(self, e: Endpoint, api: FncApi, url_args: dict = {}) -> str:
         """
-        This method construct the full url by gathering all the required information from the API and the endpoint 
+        This method construct the full url by gathering all the required information from the API and the endpoint
         and evaluating any existing argument in the url.
 
         Args:
@@ -142,7 +143,7 @@ class FncApiClient:
             self.logger.debug(f"URL successfully created: [{url}]")
         except KeyError as ex:
             # Some of the required arguments to format the url were not provided
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.ENDPOINT_VALIDATION_ERROR,
                 error_message=ErrorMessages.ENDPOINT_URL_CANNOT_BE_FORMED,
                 error_data={'endpoint': e.get_endpoint_key().name,
@@ -173,7 +174,7 @@ class FncApiClient:
         # Raise unsupported Error if no endpoint was provided
         if not endpoint:
             self.logger.error("The endpoint was not provided")
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.ENDPOINT_ERROR,
                 error_message=ErrorMessages.ENDPOINT_NOT_SUPPORTED,
                 error_data={'endpoint': ''}
@@ -190,7 +191,7 @@ class FncApiClient:
             except:
                 # Raise unsupported Error if the endpoint has not been defined
                 self.logger.error(f"The endpoint ({endpoint}) is not defined. Verify that the spelling correspond with the EndpointKey.")
-                raise FncApiClientError(
+                raise FncClientError(
                     error_type=ErrorType.ENDPOINT_ERROR,
                     error_message=ErrorMessages.ENDPOINT_NOT_SUPPORTED,
                     error_data={'endpoint': endpoint}
@@ -210,7 +211,7 @@ class FncApiClient:
         for a in filtered:
             if api:
                 # Raise a Validation Error if the endpoint is supported by most than one API.
-                raise FncApiClientError(
+                raise FncClientError(
                     error_type=ErrorType.ENDPOINT_VALIDATION_ERROR,
                     error_message=ErrorMessages.ENDPOINT_MULTIPLE_SUPPORTED,
                     error_data={'endpoint': k}
@@ -223,7 +224,7 @@ class FncApiClient:
             return e, api
         else:
             # Raise Unsupported Error since the endpoint is not supported.
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.ENDPOINT_ERROR,
                 error_message=ErrorMessages.ENDPOINT_NOT_SUPPORTED,
                 error_data={'endpoint': endpoint}
@@ -264,7 +265,7 @@ class FncApiClient:
 
     def _prepare_request(self, endpoint: str | EndpointKey, args: dict) -> tuple[Endpoint, dict]:
         """
-        This method receive an endpoint and a dictionary of arguments it then verify that the endpoint is supported, 
+        This method receive an endpoint and a dictionary of arguments it then verify that the endpoint is supported,
         that any required argument is present and that there is no unexpected argument. If the validation is passed,
         the arguments are separated as per where are they expected and the full url is computed replacing any argument
         with its value.
@@ -277,7 +278,7 @@ class FncApiClient:
             FncApiClientError: Reraise any exception raised during the endpoint validation or the calculation of the full url.
 
         Returns:
-            tuple[Endpoint, dict]: Returns the definition of the endpoint to be called and a dictionary with the arguments splitted as: 
+            tuple[Endpoint, dict]: Returns the definition of the endpoint to be called and a dictionary with the arguments splitted as:
             'url_args', 'query_args', 'body_args' and 'control_args'
         """
         e: Endpoint = None
@@ -304,13 +305,13 @@ class FncApiClient:
             url_args = e_args.get('url_args', {})
             full_url = self.get_url(e=e, api=api, url_args=url_args)
             e_args['control_args']['url'] = full_url
-        except FncApiClientError as ex:
+        except FncClientError as ex:
             self.logger.error(f"Request preparation failed for endpoint {e.get_endpoint_key().name} due to {ex}")
             raise ex
         except Exception as ex:
             self.logger.error(
                 f"Request preparation failed unexpectedly.\n [{str(ex)}]")
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.GENERIC_ERROR,
                 error_message=ErrorMessages.GENERIC_ERROR_MESSAGE,
                 error_data={'error': ex},
@@ -342,37 +343,37 @@ class FncApiClient:
                 requests_args['data'] = str(body_args)
         return requests_args
 
-    def _map_error(self, error: Exception) -> FncApiClientError:
+    def _map_error(self, error: Exception) -> FncClientError:
         masked_url = '???'
 
-        if isinstance(error, FncApiClientError):
+        if isinstance(error, FncClientError):
             return error
         elif isinstance(error, ConnectionError):
-            return FncApiClientError(
+            return FncClientError(
                 ErrorType.REQUEST_CONNECTION_ERROR,
                 ErrorMessages.REQUEST_CONNECTION_ERROR,
                 {'url': masked_url, 'error': error}
             )
         elif isinstance(error, Timeout):
-            return FncApiClientError(
+            return FncClientError(
                 ErrorType.REQUEST_TIMEOUT_ERROR,
                 ErrorMessages.REQUEST_TIMEOUT_ERROR,
                 {'url': masked_url, 'error': error}
             )
         elif isinstance(error, HTTPError):
-            return FncApiClientError(
+            return FncClientError(
                 ErrorType.REQUEST_HTTP_ERROR,
                 ErrorMessages.REQUEST_HTTP_ERROR,
                 {'url': masked_url, 'error': error}
             )
         elif isinstance(error, RequestException):
-            return FncApiClientError(
+            return FncClientError(
                 ErrorType.REQUEST_ERROR,
                 ErrorMessages.REQUEST_ERROR,
                 {'url': masked_url, 'error': error}
             )
         else:
-            return FncApiClientError(
+            return FncClientError(
                 ErrorType.GENERIC_ERROR,
                 ErrorMessages.GENERIC_ERROR_MESSAGE,
                 {'error': error}
@@ -382,7 +383,7 @@ class FncApiClient:
         need_retry = False
 
         if error:
-            if not isinstance(error, FncApiClientError):
+            if not isinstance(error, FncClientError):
                 error = self._map_error(error)
 
             if error.error_type == ErrorType.ENDPOINT_RESPONSE_VALIDATION_ERROR:
@@ -469,7 +470,8 @@ class FncApiClient:
 
         end_date = datetime.utcnow() - timedelta(minutes=polling_delay)
 
-        # We try to get the start_date from the arguments or the checkpoint. If none of them is provided we use the end_date as the first start_date
+        # We try to get the start_date from the arguments or the checkpoint.
+        # If none of them is provided we use the end_date as the first start_date
         start_date_str = checkpoint or start_date_str or "7 days"
         self.logger.debug(f"Getting search time window using start_date= {start_date_str} and polling_delay={polling_delay}")
 
@@ -517,7 +519,7 @@ class FncApiClient:
                     "If this is not the expected behavior, ensure the context's args are cleared before polling."
                 )
                 return polling_args
-            except FncApiClientError as e:
+            except FncClientError as e:
                 self.logger.warn(
                     f'Arguments contained in the context will be ignored due to: \n [{e}]')
 
@@ -533,7 +535,7 @@ class FncApiClient:
                 start_date_str=start_date_str, polling_delay=polling_delay, checkpoint=checkpoint)
         except ValueError as e:
             error_message = f"Provided start date {start_date_str} cannot be parsed."
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.POLLING_TIME_WINDOW_ERROR,
                 error_message=ErrorMessages.POLLING_TIME_WINDOW_ERROR,
                 error_data={'error_message': error_message, 'error': e},
@@ -541,7 +543,7 @@ class FncApiClient:
             )
 
         if end_date < start_date:
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.POLLING_INVALID_TIME_WINDOW_ERROR,
                 error_message=ErrorMessages.POLLING_INVALID_TIME_WINDOW_ERROR
             )
@@ -619,7 +621,7 @@ class FncApiClient:
                 "The created_or_shared_start_date and created_or_shared_end_date are required.\n")
 
         if failed:
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.POLLING_VALIDATION_ERROR,
                 error_message=ErrorMessages.POLLING_VALIDATION_ERROR,
                 error_data={'failed': failed}
@@ -662,7 +664,7 @@ class FncApiClient:
 
                 self.logger.debug(
                     "Entity's pdns information successfully retrieved.")
-            except FncApiClientError as e:
+            except FncClientError as e:
                 # If the request fails for a particular entity, we log it but continue with the execution.
                 self.logger.error(f"PDNS information for entity {entity} cannot be added due to:")
                 self.logger.error("\n".join(traceback.format_exception(e)))
@@ -680,7 +682,7 @@ class FncApiClient:
 
                 self.logger.debug(
                     "Entity's DHCP information successfully retrieved.")
-            except FncApiClientError as e:
+            except FncClientError as e:
                 # If the request fails for a particular entity, we log it but continue with the execution.
                 self.logger.error(f"DHCP information for entity {entity} cannot be added due to:")
                 self.logger.error("\n".join(traceback.format_exception(e)))
@@ -750,7 +752,7 @@ class FncApiClient:
                 try:
                     detection_events[detection['uuid']] = self._get_detection_events(
                         detection['uuid'])
-                except FncApiClientError as e:
+                except FncClientError as e:
                     failed += 1
                     # If the request for associated events fails for a particular detection, we log it but continue with the execution.
                     self.logger.error(f"Detection's events request for {detection['uuid']} failed due to:")
@@ -782,7 +784,7 @@ class FncApiClient:
                 if count:
                     self.logger.debug(
                         f"{count} Detection's associated events successfully retrieved for detection {detection_id}.")
-            except FncApiClientError as e:
+            except FncClientError as e:
                 raise e
         return detection_events
 
@@ -802,7 +804,7 @@ class FncApiClient:
 
         return response
 
-    def continuous_polling(self, context: Context = None, args: dict = None) -> dict:
+    def continuous_polling(self, context: Context = None, args: dict = None) -> Iterator[List[dict]]:
         self.logger.info("Starting continuous polling execution.")
         args = args or {}
         polling_args = {}
@@ -823,7 +825,7 @@ class FncApiClient:
                     context=context, args=args)
 
                 # Update context with the latest used arguments
-                context.update_args(args=polling_args)
+                context.update_polling_args(args=polling_args)
                 context.update_checkpoint(
                     polling_args['created_or_shared_end_date'])
 
@@ -835,11 +837,11 @@ class FncApiClient:
 
                 offset = polling_args.get('offset', 0)
                 polling_args['offset'] = offset + POLLING_MAX_DETECTIONS
-                context.update_args(args=polling_args)
+                context.update_polling_args(args=polling_args)
 
                 yield response
 
-            except FncApiClientError as e:
+            except FncClientError as e:
                 self.logger.error(
                     "Detections polling failed. " +
                     f"If a context was provided, the arguments used for the latest call will be in the Context's args field.\n {polling_args}")
@@ -853,7 +855,7 @@ class FncApiClient:
             except Exception as e:
                 self.logger.error("Detections polling failed unexpectedly.")
                 self.logger.error("\n".join(traceback.format_exception(e)))
-                raise FncApiClientError(
+                raise FncClientError(
                     error_type=ErrorType.GENERIC_ERROR,
                     error_message=ErrorMessages.GENERIC_ERROR_MESSAGE,
                     error_data={'error': e},

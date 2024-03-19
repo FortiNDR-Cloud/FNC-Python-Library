@@ -24,3 +24,6 @@ LOGGER_MAX_FILE_SIZE = 5*10**7
 
 # OTHER DEFAULTS
 DEFAULT_DATE_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+
+METASTREAM_DEFAULT_BUCKET = "fortindr-cloud-metastream"
+METASTREAM_SUPPORTED_EVENT_TYPES = ['suricata', 'observation']

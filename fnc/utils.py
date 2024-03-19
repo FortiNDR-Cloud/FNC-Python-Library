@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import dateparser
 
-from .errors import ErrorMessages, ErrorType, FncApiClientError
+from .errors import ErrorMessages, ErrorType, FncClientError
 from .global_variables import DEFAULT_DATE_FORMAT
 
 
@@ -21,7 +21,7 @@ def datetime_to_utc_str(datetime_obj: datetime = None, format: str = None) -> st
         return datetime.strftime(datetime_obj, format)
     except Exception as e:
         error = f'Date cannot be converted to str due to: {e}'
-        raise FncApiClientError(
+        raise FncClientError(
             error_type=ErrorType.GENERIC_ERROR,
             error_message=ErrorMessages.GENERIC_ERROR_MESSAGE,
             error_data={'error': error},
@@ -45,11 +45,12 @@ def str_to_utc_datetime(datetime_str: str = None, format: str = None) -> datetim
             raise ValueError(error)
 
     if not datetime_obj:
-        error = f"Date '{datetime_str}' cannot be parsed. Ensure it is in proper format '{format}' or it is a relative dates string like '1 day ago', 'yesterday', etc."
+        error = f"Date '{datetime_str}' cannot be parsed."
+        + " Ensure it is in proper format '{format}' or it is a relative dates string like '1 day ago', 'yesterday', etc."
         raise ValueError(error)
 
     if not datetime_obj.tzinfo:
-        datetime_obj.replace(tzinfo=timezone.utc)
+        datetime_obj = datetime_obj.replace(tzinfo=timezone.utc)
     else:
         datetime_obj = datetime_obj.astimezone(timezone.utc)
 

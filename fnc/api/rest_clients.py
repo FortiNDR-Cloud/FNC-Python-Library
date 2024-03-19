@@ -9,9 +9,9 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from requests.packages.urllib3.util.ssl_ import create_urllib3_context
 
-from .errors import ErrorMessages, ErrorType, FncApiClientError
-from .global_variables import REQUEST_DEFAULT_TIMEOUT
-from .logger import FncApiClientLogger
+from ..errors import ErrorMessages, ErrorType, FncClientError
+from ..global_variables import REQUEST_DEFAULT_TIMEOUT
+from ..logger import FncClientLogger
 
 CIPHERS_STRING = '@SECLEVEL=1:ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20:ECDH+AESGCM:DH+AESGCM:' \
     'ECDH+AES:DH+AES:RSA+ANESGCM:RSA+AES:!aNULL:!eNULL:!MD5:!DSS'
@@ -44,10 +44,10 @@ class SSLAdapter(HTTPAdapter):
 
 
 class FncRestClient:
-    logger: FncApiClientLogger
+    logger: FncClientLogger
     default_args: dict
 
-    def set_logger(self, logger: FncApiClientLogger):
+    def set_logger(self, logger: FncClientLogger):
         self.logger = logger
 
     def validate_request(self, req_args: dict):
@@ -69,7 +69,7 @@ class BasicRestClient(FncRestClient):
             pass
         except Exception as e:
             self.logger.error(f"Failed to close FncRestClient session with the following error:\n{traceback.format_exc()}")
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.REQUEST_CLOSING_SESSION_ERROR,
                 error_message=ErrorMessages.REQUEST_CLOSING_SESSION_ERROR,
                 error_data={'error': e},
@@ -91,13 +91,13 @@ class BasicRestClient(FncRestClient):
 
     def validate_request(self, req_args: dict):
         if not req_args or 'url' not in req_args:
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.REQUEST_VALIDATION_ERROR,
                 error_message=ErrorMessages.REQUEST_URL_NOT_PROVIDED
             )
 
         if 'method' not in req_args:
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.REQUEST_VALIDATION_ERROR,
                 error_message=ErrorMessages.REQUEST_METHOD_NOT_PROVIDED
             )
@@ -113,7 +113,7 @@ class BasicRestClient(FncRestClient):
             self.logger.debug(f"Response received from the API (status_code = {response.status_code})")
         except requests.exceptions.ConnectionError as e:
             self.logger.error(f"Request failed with the following error:\n{traceback.format_exc()}")
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.REQUEST_CONNECTION_ERROR,
                 error_message=ErrorMessages.REQUEST_CONNECTION_ERROR,
                 error_data={'url': masked_url, 'error': e},
@@ -121,7 +121,7 @@ class BasicRestClient(FncRestClient):
             ) from e
         except requests.exceptions.Timeout as e:
             self.logger.error(f"Request failed with the following error:\n{traceback.format_exc()}")
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.REQUEST_TIMEOUT_ERROR,
                 error_message=ErrorMessages.REQUEST_TIMEOUT_ERROR,
                 error_data={'url': masked_url, 'error': e},
@@ -129,7 +129,7 @@ class BasicRestClient(FncRestClient):
             ) from e
         except requests.exceptions.HTTPError as e:
             self.logger.error(f"Request failed with the following error:\n{traceback.format_exc()}")
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.REQUEST_HTTP_ERROR,
                 error_message=ErrorMessages.REQUEST_HTTP_ERROR,
                 error_data={'url': masked_url, 'error': e},
@@ -137,7 +137,7 @@ class BasicRestClient(FncRestClient):
             ) from e
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Request failed with the following error:\n{traceback.format_exc()}")
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.REQUEST_ERROR,
                 error_message=ErrorMessages.REQUEST_ERROR,
                 error_data={'url': masked_url, 'error': e},

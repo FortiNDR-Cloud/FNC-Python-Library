@@ -4,7 +4,7 @@ import pytest
 import requests
 import requests_mock
 
-from fnc.api.errors import ErrorType, FncApiClientError
+from fnc.errors import ErrorType, FncClientError
 from fnc.tests.api.mocks import MockEndpoint
 from fnc.tests.api.utils import *
 
@@ -155,10 +155,10 @@ def test_validate_failure():
                         'query_arg_allowed', 'query_arg_multiple_and_allowed']
     expected_unexpected = ['unexpected_arg']
 
-    with pytest.raises(FncApiClientError) as e:
+    with pytest.raises(FncClientError) as e:
         endpoint.validate(invalid_args)
 
-    ex: FncApiClientError = e.value
+    ex: FncClientError = e.value
     data: dict = ex.error_data
 
     assert ex.error_type == ErrorType.ENDPOINT_VALIDATION_ERROR
@@ -199,10 +199,10 @@ def test_validate_response_bad_status():
                          status_code=bad_status_code)
         invalid_response = requests.get(fake_url)
 
-        with pytest.raises(FncApiClientError) as e:
+        with pytest.raises(FncClientError) as e:
             endpoint.validate_response(invalid_response)
 
-        ex: FncApiClientError = e.value
+        ex: FncClientError = e.value
         assert ex.error_type == ErrorType.ENDPOINT_RESPONSE_VALIDATION_ERROR
 
 
@@ -218,10 +218,10 @@ def test_validate_response_bad_json():
                          status_code=status_code)
         invalid_response = requests.get(fake_url)
 
-    with pytest.raises(FncApiClientError) as e:
+    with pytest.raises(FncClientError) as e:
         endpoint.validate_response(invalid_response)
 
-    ex: FncApiClientError = e.value
+    ex: FncClientError = e.value
     assert ex.error_type == ErrorType.ENDPOINT_RESPONSE_VALIDATION_ERROR
 
 
@@ -237,10 +237,10 @@ def test_validate_response_bad_status_and_json():
                          status_code=bad_status_code)
         invalid_response = requests.get(fake_url)
 
-        with pytest.raises(FncApiClientError) as e:
+        with pytest.raises(FncClientError) as e:
             endpoint.validate_response(invalid_response)
 
-        ex: FncApiClientError = e.value
+        ex: FncClientError = e.value
         assert ex.error_type == ErrorType.ENDPOINT_RESPONSE_VALIDATION_ERROR
 
 
@@ -261,8 +261,8 @@ def test_validate_invalid_response():
             mock_request.get(fake_url, json=content, status_code=status_code)
             invalid_response = requests.get(fake_url)
 
-            with pytest.raises(FncApiClientError) as e:
+            with pytest.raises(FncClientError) as e:
                 endpoint.validate_response(invalid_response)
 
-            ex: FncApiClientError = e.value
+            ex: FncClientError = e.value
             assert ex.error_type == ErrorType.ENDPOINT_RESPONSE_VALIDATION_ERROR

@@ -3,8 +3,8 @@ from enum import Enum, auto
 from requests import Response
 from requests.exceptions import HTTPError, JSONDecodeError
 
-from .errors import ErrorMessages, ErrorType, FncApiClientError
-from .logger import FncApiClientLogger
+from ..errors import ErrorMessages, ErrorType, FncClientError
+from ..logger import FncClientLogger
 
 
 class EndpointEnum(Enum):
@@ -43,13 +43,13 @@ class EndpointKey (EndpointEnum):
 
 
 class Endpoint:
-    _logger: FncApiClientLogger = None
+    _logger: FncClientLogger = None
     version: str
     endpoint: str
 
     default_values: dict = {}
 
-    def set_Logger(self, logger: FncApiClientLogger):
+    def set_Logger(self, logger: FncClientLogger):
         self._logger = logger
 
     def get_endpoint_key(self) -> EndpointKey:
@@ -204,7 +204,7 @@ class Endpoint:
 
     def validate(self, to_validate: dict):
         """
-        This method receive a dictionary with the arguments and verify that any required argument is present and 
+        This method receive a dictionary with the arguments and verify that any required argument is present and
         that there is no unexpected argument.
 
         Args:
@@ -257,7 +257,7 @@ class Endpoint:
             unexpected = list(to_validate['unexpected_args'].keys())
 
         if missing or unexpected or invalid:
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.ENDPOINT_VALIDATION_ERROR,
                 error_message=ErrorMessages.ENDPOINT_ARGUMENT_VALIDATION,
                 error_data={'endpoint': self.get_endpoint_key().name, 'missing': missing, 'unexpected': unexpected, 'invalid': invalid}
@@ -265,7 +265,7 @@ class Endpoint:
 
     def _validate_argument(self, to_validate: dict, args_definition: dict | list, requires_all: bool = False) -> tuple[list, list, list]:
         """
-        This method take a dictionary of arguments and the arguments definitions to validate that 
+        This method take a dictionary of arguments and the arguments definitions to validate that
         any required argument is present and any existing argument is expected.
 
         Args:
@@ -337,7 +337,7 @@ class Endpoint:
                 error = e
             status = response.status_code
 
-            raise FncApiClientError(
+            raise FncClientError(
                 error_type=ErrorType.ENDPOINT_RESPONSE_VALIDATION_ERROR,
                 error_message=ErrorMessages.ENDPOINT_RESPONSE_INVALID_STATUS_CODE,
                 error_data={'endpoint': self.get_endpoint_key().name, 'status': status, 'error': error},
@@ -348,7 +348,7 @@ class Endpoint:
             # Validate the response is empty as it was expected
             if response.text():
                 error = f"An empty response was expected but '{response.text()}' was received."
-                raise FncApiClientError(
+                raise FncClientError(
                     error_type=ErrorType.ENDPOINT_RESPONSE_VALIDATION_ERROR,
                     error_message=ErrorMessages.ENDPOINT_RESPONSE_INVALID,
                     error_data={'endpoint': self.get_endpoint_key().name, 'error': error}
@@ -361,7 +361,7 @@ class Endpoint:
                 res_json = response.json()
             except JSONDecodeError as e:
                 error = f'Response is not a valid json [{e}].'
-                raise FncApiClientError(
+                raise FncClientError(
                     error_type=ErrorType.ENDPOINT_RESPONSE_VALIDATION_ERROR,
                     error_message=ErrorMessages.ENDPOINT_RESPONSE_INVALID,
                     error_data={'endpoint': self.get_endpoint_key().name, 'error': error},
@@ -375,7 +375,7 @@ class Endpoint:
 
             if missing:
                 error = f"Fields {missing} are missing from the response."
-                raise FncApiClientError(
+                raise FncClientError(
                     error_type=ErrorType.ENDPOINT_RESPONSE_VALIDATION_ERROR,
                     error_message=ErrorMessages.ENDPOINT_RESPONSE_INVALID,
                     error_data={"endpoint": self.get_endpoint_key().name, "error": error}
@@ -449,20 +449,25 @@ class GetSensors(Endpoint):
 
 class GetDevices(Endpoint):
     """
-    List of devices for a particular cidr/prefix and Sensor with NS/EW true or false (limited to 10k ES default). 
+    List of devices for a particular cidr/prefix and Sensor with NS/EW true or false (limited to 10k ES default).
     Args:
-        account_uuid (str): account's id to filter results, 
-        start_date (str):, 
-        end_date (str):, 
-        cidr/prefix (str): CIDR or an IP prefix is optionally accepted (prefix is converted to CIDR in the backend. The output subnet width is the 8bit subnet directly smaller than the filter CIDR/prefix. , 
-        sensor_id (str): sensor's id to filter results, 
-        dedup_sensor_id (str): 'YES' or 'NO' (Default: 'YES'). 
-        traffic_direction (str): 'internal' or 'external', 
-        sort_by (str): 'ip_address','internal' or 'external', 
-        sort_direction (str): 'asc' or 'desc', 
+        account_uuid (str): account's id to filter results,
+        start_date (str):,
+        end_date (str):,
+        cidr/prefix (str): CIDR or an IP prefix is optionally accepted (prefix is converted to CIDR in the backend.
+            The output subnet width is the 8bit subnet directly smaller than the filter CIDR/prefix. ,
+        sensor_id (str): sensor's id to filter results,
+        dedup_sensor_id (str): 'YES' or 'NO' (Default: 'YES').
+        traffic_direction (str): 'internal' or 'external',
+        sort_by (str): 'ip_address','internal' or 'external',
+        sort_direction (str): 'asc' or 'desc',
 
     Returns:
-        dict: A dictionary containing three fields ( 'device_list': list of returned devices, 'result_count': total count of devices and 'return_count': Amount of returned devices)
+        dict: A dictionary containing three fields (
+            'device_list': list of returned devices,
+            'result_count': total count of devices and
+            'return_count': Amount of returned devices
+        )
     """
 
     version: str = 'v1'
@@ -1012,7 +1017,7 @@ class GetRuleEvents(Endpoint):
 
 
 class FncApi:
-    _logger: FncApiClientLogger = None
+    _logger: FncClientLogger = None
     _api_name: str = None
 
     def get_name(self) -> str:

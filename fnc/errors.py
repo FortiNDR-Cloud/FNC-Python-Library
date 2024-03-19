@@ -1,4 +1,3 @@
-import traceback
 from enum import Enum, auto
 
 
@@ -7,6 +6,7 @@ class ErrorMessages:
     # Client related error's messages
     GENERIC_ERROR_MESSAGE = "FNC Client API failed with error [{error}]."
     CLIENT_API_TOKEN_VALIDATION_ERROR = "The API Token validation failed due to {error}."
+    CLIENT_REQUIRED_ARGUMENT_MISSING = "Arguments {arguments} are required for the {client} creation."
 
     # Endpoint related error's messages
 
@@ -35,12 +35,18 @@ class ErrorMessages:
     REQUEST_CLOSING_SESSION_ERROR = "The HTTP session cannot be closed due to: [{error}]."
     REQUEST_ERROR = "The request to {url} cannot be handled due to a Request exception [{error}]."
 
+    # Metastream related error's messages
+
+    EVENTS_FETCH_VALIDATION_ERROR = "Some of the arguments provided for fetching events from metastream are invalid:\n [{failed}]"
+    EVENTS_UNKNOWN_DATE_PREFIX_FORMAT = "The date format for the date_prefix {date_prefix} is unknown [{error}]."
+
 
 class ErrorType(Enum):
 
     # Client related errors
 
     GENERIC_ERROR = auto()
+    CLIENT_VALIDATION_ERROR = auto()
     CLIENT_API_TOKEN_VALIDATION_ERROR = auto()
 
     # Continuous Polling related errors
@@ -64,8 +70,13 @@ class ErrorType(Enum):
     REQUEST_CLOSING_SESSION_ERROR = auto()
     REQUEST_ERROR = auto()
 
+    # Metastream related errors
 
-class FncApiClientError(Exception):
+    EVENTS_FETCH_VALIDATION_ERROR = auto()
+    EVENTS_UNKNOWN_DATE_PREFIX_FORMAT = auto()
+
+
+class FncClientError(Exception):
     error_type: ErrorType
     error_message: str
     error_data: dict

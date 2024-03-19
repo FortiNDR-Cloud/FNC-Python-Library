@@ -5,7 +5,7 @@ from logging.handlers import RotatingFileHandler
 from .global_variables import LOGGER_FORMAT, LOGGER_MAX_FILE_SIZE, LOGGER_NAME_PREFIX
 
 
-class FncApiClientLogger:
+class FncClientLogger:
     def set_level(self, level):
         raise NotImplementedError()
 
@@ -28,7 +28,7 @@ class FncApiClientLogger:
         raise NotImplementedError()
 
 
-class BasicLogger(FncApiClientLogger):
+class BasicLogger(FncClientLogger):
 
     FORMATTER = logging.Formatter(LOGGER_FORMAT)
     NAME = LOGGER_NAME_PREFIX

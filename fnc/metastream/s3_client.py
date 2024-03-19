@@ -1,7 +1,7 @@
 import gzip
 import io
 import json
-from typing import List
+from typing import Iterator, List
 
 import boto3
 import botocore.client
@@ -65,7 +65,7 @@ class _S3Client:
             self.client = boto3.client(
                 's3', aws_access_key_id=access_key, aws_secret_access_key=secret_key, config=config)
 
-    def fetch_common_prefixes(self, prefix: str) -> List[str]:
+    def fetch_common_prefixes(self, prefix: str) -> Iterator[List[str]]:
         """
         A generator function that yields common prefix found after the given prefix.
 
@@ -97,7 +97,7 @@ class _S3Client:
             for prefix in common_prefixes:
                 yield prefix.get('Prefix')
 
-    def fetch_file_objects(self, prefix: str) -> List:
+    def fetch_file_objects(self, prefix: str) -> Iterator[List]:
         """
         A generator method that yields file objects found after the given key prefix.
 
