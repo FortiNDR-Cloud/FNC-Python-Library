@@ -3,7 +3,7 @@ import requests_mock
 
 from fnc.api.endpoints import ArgumentDefinition, Endpoint, EndpointKey, FncApi
 from fnc.api.rest_clients import FncRestClient
-from fnc.tests.utils import *
+from tests.utils import *
 
 
 class MockEndpoint(Endpoint):

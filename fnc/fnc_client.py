@@ -1,5 +1,6 @@
-from .api import FncApiClient, FncClientLogger, FncRestClient
+from .api import FncApiClient, FncRestClient
 from .global_variables import *
+from .logger import FncClientLogger
 from .metastream import FncMetastreamClient
 
 

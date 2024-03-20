@@ -1,4 +1,4 @@
-from .client import Context, FncApiClient
+from .api_client import Context, FncApiClient
 from .endpoints import EndpointKey
 from .rest_clients import FncRestClient
 

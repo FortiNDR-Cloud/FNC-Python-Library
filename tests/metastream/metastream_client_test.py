@@ -6,10 +6,9 @@ import pytest
 
 from fnc.global_variables import *
 # from fnc.metastream import fetch_events, fetch_events_by_day
-from fnc.metastream.client import *
-from fnc.metastream.errors import InputError, ServerError
+from fnc.metastream.metastream_client import *
 from fnc.metastream.s3_client import Context
-from fnc.tests.utils import *
+from tests.utils import *
 
 
 def test_validate():
@@ -584,8 +583,9 @@ def test_fetch_events(mocker):
         [['e8', 'e9', 'e10']],
         [['e11', 'e12']],
     ]
-    mock_get_prefixes = mocker.patch('fnc.metastream.client.FncMetastreamClient._get_prefixes', return_value=prefixes)
-    mock_get_events_from_prefix = mocker.patch('fnc.metastream.client.FncMetastreamClient._get_events_from_prefix', side_effect=expected)
+    mock_get_prefixes = mocker.patch('fnc.metastream.metastream_client.FncMetastreamClient._get_prefixes', return_value=prefixes)
+    mock_get_events_from_prefix = mocker.patch(
+        'fnc.metastream.metastream_client.FncMetastreamClient._get_events_from_prefix', side_effect=expected)
 
     client: FncMetastreamClient = FncMetastreamClient(
         name='Test',
@@ -722,8 +722,9 @@ def test_fetch_events_by_day(mocker):
         [['e8', 'e9', 'e10']],
         [['e11', 'e12']],
     ]
-    mock_get_prefixes = mocker.patch('fnc.metastream.client.FncMetastreamClient._get_prefixes', return_value=prefixes)
-    mock_get_events_from_prefix = mocker.patch('fnc.metastream.client.FncMetastreamClient._get_events_from_prefix', side_effect=expected)
+    mock_get_prefixes = mocker.patch('fnc.metastream.metastream_client.FncMetastreamClient._get_prefixes', return_value=prefixes)
+    mock_get_events_from_prefix = mocker.patch(
+        'fnc.metastream.metastream_client.FncMetastreamClient._get_events_from_prefix', side_effect=expected)
 
     client: FncMetastreamClient = FncMetastreamClient(
         name='Test',

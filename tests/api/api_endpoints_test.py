@@ -5,8 +5,8 @@ import requests
 import requests_mock
 
 from fnc.errors import ErrorType, FncClientError
-from fnc.tests.api.mocks import MockEndpoint
-from fnc.tests.utils import *
+from tests.api.mocks import MockEndpoint
+from tests.utils import *
 
 
 def test_get_url():

@@ -468,7 +468,7 @@ class FncApiClient:
 
     def _get_search_window(self, start_date_str: str = None, polling_delay: int = None, checkpoint: str = None) -> tuple[datetime, datetime]:
 
-        end_date = datetime.utcnow() - timedelta(minutes=polling_delay)
+        end_date = datetime.now(tz=timezone.utc) - timedelta(minutes=polling_delay)
 
         # We try to get the start_date from the arguments or the checkpoint.
         # If none of them is provided we use the end_date as the first start_date
@@ -527,7 +527,7 @@ class FncApiClient:
         polling_args: dict = self.get_default_polling_args()
 
         polling_delay = args.get('polling_delay', POLLING_DEFAULT_DELAY)
-        checkpoint = context.checkpoint if context else None
+        checkpoint = context.get_checkpoint() if context else None
         start_date_str = args.get('start_date', '')
 
         try:
