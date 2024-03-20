@@ -10,12 +10,6 @@ from ..utils import *
 # from .auth_client import Auth
 from .s3_client import Context, S3Client
 
-EVENT_TYPES = ['suricata', 'observation']
-DEFAULT_BUCKET = {
-    "production": "fortindr-cloud-metastream",
-    "uat": "fortindr-cloud-metastream-uat"
-}
-
 
 class FncMetastreamClient:
     user_agent: str
@@ -67,7 +61,7 @@ class FncMetastreamClient:
         """returns the bucket key prefix up to the account_code"""
         return f'v1/customer/cust-{self.account_code}'
 
-    def _validate(self, event_types: List[str], start_date: datetime, end_date: datetime):
+    def _validate(self, event_types: List[str], start_date: datetime, end_date: datetime = None):
         self.logger.debug("Validating metastream events fetch request's arguments.")
 
         failed = []
@@ -75,8 +69,12 @@ class FncMetastreamClient:
             failed.append(f'Invalid event types. The event_types must be of the following: {", ".join(METASTREAM_SUPPORTED_EVENT_TYPES)}')
 
         if not end_date:
-            if (datetime.now(timezone.utc).date() - start_date).days > 7:
+            d = start_date.date() if isinstance(start_date, datetime) else start_date
+            if (datetime.now(timezone.utc).date() - d).days > 7:
                 failed.append("Only events within last 7 days can be searched.")
+
+            if (datetime.now(timezone.utc).date() - d).days < 1:
+                failed.append("Only events for a whole day within last 7 days can be searched.")
         else:
             delta = end_date - start_date
             if delta > timedelta(days=1):
@@ -154,6 +152,9 @@ class FncMetastreamClient:
         limit: int = 0, num_events: int = 0,
         start_date: datetime = None, end_date: datetime = None
     ):
+        if limit and num_events >= limit:
+            return
+
         for obj in s3.fetch_file_objects(f'{prefix}v1/'):
             if start_date and start_date > obj.get('LastModified'):
                 continue
@@ -188,7 +189,10 @@ class FncMetastreamClient:
         self.logger.info("Fetching events")
         with S3Client(self.bucket, self.access_key, self.secret_key, self.user_agent, context=context) as s3:
             for event_type_prefix in self._get_prefixes(s3=s3, event_type=event_type, start_day=start_day, exact_day=True, context=context):
-                for events in self._get_events_from_prefix(s3=s3, prefix=event_type_prefix, limit=limit, num_events=num_events):
+                for events in self._get_events_from_prefix(
+                    s3=s3, prefix=event_type_prefix,
+                    limit=limit, num_events=num_events
+                ):
                     num_events += len(events)
                     yield events
 

@@ -16,9 +16,11 @@ class FncClient:
 
     @classmethod
     def get_metastream_client(
-            name: str,
-            account_code: str = None,
-            access_key: str = None,
-            secret_key: str = None,
-            bucket: str = None) -> FncMetastreamClient:
+        name: str,
+        account_code: str = None,
+        access_key: str = None,
+        secret_key: str = None,
+        bucket: str = None,
+        logger: FncClientLogger = None
+    ) -> FncMetastreamClient:
         return FncMetastreamClient(name=name, account_code=account_code, access_key=access_key, secret_key=secret_key, bucket=bucket)

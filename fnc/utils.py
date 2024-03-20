@@ -46,7 +46,7 @@ def str_to_utc_datetime(datetime_str: str = None, format: str = None) -> datetim
 
     if not datetime_obj:
         error = f"Date '{datetime_str}' cannot be parsed."
-        + " Ensure it is in proper format '{format}' or it is a relative dates string like '1 day ago', 'yesterday', etc."
+        error += " Ensure it is in proper format '{format}' or it is a relative dates string like '1 day ago', 'yesterday', etc."
         raise ValueError(error)
 
     if not datetime_obj.tzinfo:

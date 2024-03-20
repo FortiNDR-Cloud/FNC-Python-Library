@@ -1,12 +1,10 @@
 
-import pytest
-
 from fnc.api.client import FncApiClient
 from fnc.api.endpoints import EndpointKey
 from fnc.errors import ErrorType, FncClientError
 from fnc.global_variables import *
 from fnc.tests.api.mocks import MockApi, MockEndpoint, MockRestClient
-from fnc.tests.api.utils import *
+from fnc.tests.utils import *
 
 
 def test_get_url_failure_missing_url_args(mocker):
