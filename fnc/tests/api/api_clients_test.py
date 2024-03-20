@@ -1,4 +1,6 @@
 
+import pytest
+
 from fnc.api.client import FncApiClient
 from fnc.api.endpoints import EndpointKey
 from fnc.errors import ErrorType, FncClientError
