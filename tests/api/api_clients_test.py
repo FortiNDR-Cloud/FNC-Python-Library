@@ -8,7 +8,7 @@ import pytest
 
 from fnc.api.api_client import DetectionApi, EntityApi, FncApiClient, SensorApi
 from fnc.api.endpoints import EndpointKey
-from fnc.errors import ErrorType, FncClientError
+from fnc.errors import ErrorMessages, ErrorType, FncClientError
 from fnc.fnc_client import FncClient
 from fnc.global_variables import *
 from tests.api.mocks import MockApi, MockEndpoint, MockRestClient
@@ -209,6 +209,11 @@ def test_get_endpoint_if_supported_succeed(mocker):
         assert e and e == e1
 
 
+@pytest.mark.skip('This test is in development')
+def test_retry_mechanism(mocker):
+    assert False
+
+
 def test_call_endpoint_succeed(mocker):
     api_token = 'fake_api_token'
     domain = 'fake_domain'
@@ -313,9 +318,398 @@ def test_call_endpoint_succeed(mocker):
     assert not spy_send_request.spy_exception
 
 
-@pytest.mark.skip('This test is in development')
-def test_call_endpoint_failure(mocker):
-    assert False
+def test_call_endpoint_failure_invalid_endpoint(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    rest_client = MockRestClient()
+    supported: list = get_random_endpoint_keys(size=1)
+    api1: MockApi = MockApi(endpoints_keys=supported)
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
+    client.supported_api = [api1]
+
+    key_name = supported[0].title()
+    endpoint_key: EndpointKey = EndpointKey(key_name)
+
+    endpoint_validation_error = FncClientError(
+        error_type=ErrorType.ENDPOINT_VALIDATION_ERROR,
+        error_message=ErrorMessages.ENDPOINT_ARGUMENT_VALIDATION,
+        error_data={'endpoint': endpoint_key.name, 'missing': 'missing', 'unexpected': 'unexpected', 'invalid': 'invalid'}
+    )
+
+    mock_endpoint_validate = mocker.patch(
+        'fnc.api.endpoints.Endpoint.validate', side_effect=endpoint_validation_error)
+
+    rand_string = get_random_string(),
+    args: dict = {
+        'url_arg_1': 'url_arg_1_value',
+        'url_arg_2': 'url_arg_2_value',
+
+        'body_arg_required': rand_string,
+        'body_arg_multiple': f"{rand_string},{rand_string}",
+        'body_arg_allowed': "expected_1",
+        'body_arg_multiple_and_allowed': "expected_1,expected_2",
+
+        'query_arg_required': rand_string,
+        'query_arg_multiple': f"{rand_string},{rand_string}",
+        'query_arg_allowed': "expected_1",
+        'query_arg_multiple_and_allowed': "expected_1,expected_2",
+    }
+    # Testing passing EndpointKey
+    with pytest.raises(FncClientError) as e:
+        client.call_endpoint(endpoint=endpoint_key, args=args)
+
+    assert mock_endpoint_validate.call_count == 1
+    assert e.value == endpoint_validation_error
+
+    # Testing passing endpoint as str
+    with pytest.raises(FncClientError) as e:
+        client.call_endpoint(endpoint=endpoint_key.name, args=args)
+
+    assert mock_endpoint_validate.call_count == 2
+    assert e.value == endpoint_validation_error
+
+
+def test_call_endpoint_failure_invalid_request(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    rest_client = MockRestClient()
+
+    request_validation_error = FncClientError(
+        error_type=ErrorType.REQUEST_VALIDATION_ERROR,
+        error_message=ErrorMessages.REQUEST_URL_NOT_PROVIDED
+    )
+
+    mock_validate_request = mocker.patch.object(
+        rest_client, 'validate_request', side_effect=request_validation_error)
+
+    supported: list = get_random_endpoint_keys(size=1)
+    api1: MockApi = MockApi(endpoints_keys=supported)
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
+    client.supported_api = [api1]
+
+    key_name = supported[0].title()
+    endpoint_key: EndpointKey = EndpointKey(key_name)
+    endpoint: MockEndpoint = api1.get_supported_endpoints().get(endpoint_key)
+
+    spy_endpoint_validate = mocker.spy(endpoint, 'validate')
+
+    rand_string = get_random_string(),
+    args: dict = {
+        'url_arg_1': 'url_arg_1_value',
+        'url_arg_2': 'url_arg_2_value',
+
+        'body_arg_required': rand_string,
+        'body_arg_multiple': f"{rand_string},{rand_string}",
+        'body_arg_allowed': "expected_1",
+        'body_arg_multiple_and_allowed': "expected_1,expected_2",
+
+        'query_arg_required': rand_string,
+        'query_arg_multiple': f"{rand_string},{rand_string}",
+        'query_arg_allowed': "expected_1",
+        'query_arg_multiple_and_allowed': "expected_1,expected_2",
+    }
+    req_args = {
+        'method': 'METHOD',
+        'verify': REQUEST_DEFAULT_VERIFY,
+        'timeout': REQUEST_DEFAULT_TIMEOUT,
+        'headers': {
+            'Authorization': 'IBToken fake_api_token',
+            'User-Agent': 'FNC_Py_Client-v1.0.0-fake_agent',
+            'Content-Type': 'application/json'
+        },
+        'url': 'https://mock_api.fake_domain/expected_version/expected_endpoint/url_arg_1_value/url_arg_2_value',
+        'params': {
+            'query_arg_required': rand_string,
+            'query_arg_multiple': [rand_string, rand_string],
+            'query_arg_allowed': 'expected_1',
+            'query_arg_multiple_and_allowed': ['expected_1', 'expected_2']
+        },
+        'json': {
+            'body_arg_required': rand_string,
+            'body_arg_multiple': [rand_string, rand_string],
+            'body_arg_allowed': 'expected_1',
+            'body_arg_multiple_and_allowed': ['expected_1', 'expected_2']
+        }
+    }
+
+    # Testing with Default Control Arguments
+
+    with pytest.raises(FncClientError) as e:
+        client.call_endpoint(endpoint=endpoint_key, args=args)
+
+    assert spy_endpoint_validate.call_count == 1
+    assert mock_validate_request.call_count == 1
+    assert e.value == request_validation_error
+    assert deep_diff(rest_client.validate_request_args, req_args)
+
+
+def test_call_endpoint_failure_failed_request(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    rest_client = MockRestClient()
+
+    send_request_error = FncClientError(
+        error_type=ErrorType.REQUEST_CONNECTION_ERROR,
+        error_message=ErrorMessages.REQUEST_CONNECTION_ERROR
+    )
+    mock_send_request = mocker.patch.object(
+        rest_client, 'send_request', side_effect=send_request_error)
+    spy_validate_request = mocker.spy(rest_client, 'validate_request')
+
+    supported: list = get_random_endpoint_keys(size=1)
+    api1: MockApi = MockApi(endpoints_keys=supported)
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
+    client.supported_api = [api1]
+
+    need_retry_attempts = random.randint(1, REQUEST_MAXIMUM_RETRY_ATTEMPT)
+    need_retry = [True for i in range(need_retry_attempts)]
+    need_retry[need_retry_attempts-1] = False
+
+    mock_need_retry = mocker.patch.object(client, "_is_retry_needed", side_effect=need_retry)
+
+    key_name = supported[0].title()
+    endpoint_key: EndpointKey = EndpointKey(key_name)
+    endpoint: MockEndpoint = api1.get_supported_endpoints().get(endpoint_key)
+
+    spy_endpoint_validate = mocker.spy(endpoint, 'validate')
+    spy_endpoint_validate_response = mocker.spy(endpoint, 'validate_response')
+
+    rand_string = get_random_string(),
+    args: dict = {
+        'url_arg_1': 'url_arg_1_value',
+        'url_arg_2': 'url_arg_2_value',
+
+        'body_arg_required': rand_string,
+        'body_arg_multiple': f"{rand_string},{rand_string}",
+        'body_arg_allowed': "expected_1",
+        'body_arg_multiple_and_allowed': "expected_1,expected_2",
+
+        'query_arg_required': rand_string,
+        'query_arg_multiple': f"{rand_string},{rand_string}",
+        'query_arg_allowed': "expected_1",
+        'query_arg_multiple_and_allowed': "expected_1,expected_2",
+    }
+    req_args = {
+        'method': 'METHOD',
+        'verify': REQUEST_DEFAULT_VERIFY,
+        'timeout': REQUEST_DEFAULT_TIMEOUT,
+        'headers': {
+            'Authorization': 'IBToken fake_api_token',
+            'User-Agent': 'FNC_Py_Client-v1.0.0-fake_agent',
+            'Content-Type': 'application/json'
+        },
+        'url': 'https://mock_api.fake_domain/expected_version/expected_endpoint/url_arg_1_value/url_arg_2_value',
+        'params': {
+            'query_arg_required': rand_string,
+            'query_arg_multiple': [rand_string, rand_string],
+            'query_arg_allowed': 'expected_1',
+            'query_arg_multiple_and_allowed': ['expected_1', 'expected_2']
+        },
+        'json': {
+            'body_arg_required': rand_string,
+            'body_arg_multiple': [rand_string, rand_string],
+            'body_arg_allowed': 'expected_1',
+            'body_arg_multiple_and_allowed': ['expected_1', 'expected_2']
+        }
+    }
+
+    with pytest.raises(FncClientError) as e:
+        client.call_endpoint(endpoint=endpoint_key, args=args)
+
+    assert spy_endpoint_validate.call_count == need_retry_attempts
+    assert spy_validate_request.call_count == need_retry_attempts
+    assert deep_diff(rest_client.validate_request_args, req_args)
+    assert mock_need_retry.call_count == need_retry_attempts
+    assert mock_send_request.call_count == need_retry_attempts
+    assert e.value == send_request_error
+    assert spy_endpoint_validate_response.call_count == 0
+
+
+def test_call_endpoint_failure_invalid_response(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    rest_client = MockRestClient()
+    spy_send_request = mocker.spy(rest_client, 'send_request')
+    spy_validate_request = mocker.spy(rest_client, 'validate_request')
+
+    supported: list = get_random_endpoint_keys(size=1)
+    api1: MockApi = MockApi(endpoints_keys=supported)
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
+    client.supported_api = [api1]
+
+    need_retry_attempts = random.randint(1, REQUEST_MAXIMUM_RETRY_ATTEMPT)
+    need_retry = [True for i in range(need_retry_attempts)]
+    need_retry[need_retry_attempts-1] = False
+
+    mock_need_retry = mocker.patch.object(client, "_is_retry_needed", side_effect=need_retry)
+
+    key_name = supported[0].title()
+    endpoint_key: EndpointKey = EndpointKey(key_name)
+    endpoint: MockEndpoint = api1.get_supported_endpoints().get(endpoint_key)
+
+    endpoint_response_validation_error = FncClientError(
+        error_type=ErrorType.ENDPOINT_RESPONSE_VALIDATION_ERROR,
+        error_message=ErrorMessages.ENDPOINT_RESPONSE_INVALID,
+        error_data={'endpoint': endpoint_key.name, 'error': 'error'}
+    )
+
+    spy_endpoint_validate = mocker.spy(endpoint, 'validate')
+    mock_endpoint_validate_response = mocker.patch.object(
+        endpoint, 'validate_response', side_effect=endpoint_response_validation_error)
+
+    rand_string = get_random_string(),
+    args: dict = {
+        'url_arg_1': 'url_arg_1_value',
+        'url_arg_2': 'url_arg_2_value',
+
+        'body_arg_required': rand_string,
+        'body_arg_multiple': f"{rand_string},{rand_string}",
+        'body_arg_allowed': "expected_1",
+        'body_arg_multiple_and_allowed': "expected_1,expected_2",
+
+        'query_arg_required': rand_string,
+        'query_arg_multiple': f"{rand_string},{rand_string}",
+        'query_arg_allowed': "expected_1",
+        'query_arg_multiple_and_allowed': "expected_1,expected_2",
+    }
+    req_args = {
+        'method': 'METHOD',
+        'verify': REQUEST_DEFAULT_VERIFY,
+        'timeout': REQUEST_DEFAULT_TIMEOUT,
+        'headers': {
+            'Authorization': 'IBToken fake_api_token',
+            'User-Agent': 'FNC_Py_Client-v1.0.0-fake_agent',
+            'Content-Type': 'application/json'
+        },
+        'url': 'https://mock_api.fake_domain/expected_version/expected_endpoint/url_arg_1_value/url_arg_2_value',
+        'params': {
+            'query_arg_required': rand_string,
+            'query_arg_multiple': [rand_string, rand_string],
+            'query_arg_allowed': 'expected_1',
+            'query_arg_multiple_and_allowed': ['expected_1', 'expected_2']
+        },
+        'json': {
+            'body_arg_required': rand_string,
+            'body_arg_multiple': [rand_string, rand_string],
+            'body_arg_allowed': 'expected_1',
+            'body_arg_multiple_and_allowed': ['expected_1', 'expected_2']
+        }
+    }
+
+    with pytest.raises(FncClientError) as e:
+        client.call_endpoint(endpoint=endpoint_key, args=args)
+
+    assert spy_endpoint_validate.call_count == need_retry_attempts
+    assert spy_validate_request.call_count == need_retry_attempts
+    assert deep_diff(rest_client.validate_request_args, req_args)
+    assert mock_need_retry.call_count == need_retry_attempts
+    assert spy_send_request.call_count == need_retry_attempts
+    assert deep_diff(rest_client.send_request_args, req_args)
+    assert e.value == endpoint_response_validation_error
+    assert mock_endpoint_validate_response.call_count == need_retry_attempts
+
+
+def test_call_endpoint_failure_retry_stop_when_false(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    rest_client = MockRestClient()
+    spy_send_request = mocker.spy(rest_client, 'send_request')
+    spy_validate_request = mocker.spy(rest_client, 'validate_request')
+
+    supported: list = get_random_endpoint_keys(size=1)
+    api1: MockApi = MockApi(endpoints_keys=supported)
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
+    client.supported_api = [api1]
+
+    need_retry_attempts = REQUEST_MAXIMUM_RETRY_ATTEMPT + 1
+    need_retry = [True for i in range(need_retry_attempts)]
+    need_retry[need_retry_attempts-1] = False
+    mock_need_retry = mocker.patch.object(client, "_is_retry_needed", side_effect=need_retry)
+
+    key_name = supported[0].title()
+    endpoint_key: EndpointKey = EndpointKey(key_name)
+    endpoint: MockEndpoint = api1.get_supported_endpoints().get(endpoint_key)
+
+    endpoint_response_validation_error = FncClientError(
+        error_type=ErrorType.ENDPOINT_RESPONSE_VALIDATION_ERROR,
+        error_message=ErrorMessages.ENDPOINT_RESPONSE_INVALID,
+        error_data={'endpoint': endpoint_key.name, 'error': 'error'}
+    )
+
+    spy_endpoint_validate = mocker.spy(endpoint, 'validate')
+    mock_endpoint_validate_response = mocker.patch.object(
+        endpoint, 'validate_response', side_effect=endpoint_response_validation_error)
+
+    rand_string = get_random_string(),
+    args: dict = {
+        'url_arg_1': 'url_arg_1_value',
+        'url_arg_2': 'url_arg_2_value',
+
+        'body_arg_required': rand_string,
+        'body_arg_multiple': f"{rand_string},{rand_string}",
+        'body_arg_allowed': "expected_1",
+        'body_arg_multiple_and_allowed': "expected_1,expected_2",
+
+        'query_arg_required': rand_string,
+        'query_arg_multiple': f"{rand_string},{rand_string}",
+        'query_arg_allowed': "expected_1",
+        'query_arg_multiple_and_allowed': "expected_1,expected_2",
+    }
+    req_args = {
+        'method': 'METHOD',
+        'verify': REQUEST_DEFAULT_VERIFY,
+        'timeout': REQUEST_DEFAULT_TIMEOUT,
+        'headers': {
+            'Authorization': 'IBToken fake_api_token',
+            'User-Agent': 'FNC_Py_Client-v1.0.0-fake_agent',
+            'Content-Type': 'application/json'
+        },
+        'url': 'https://mock_api.fake_domain/expected_version/expected_endpoint/url_arg_1_value/url_arg_2_value',
+        'params': {
+            'query_arg_required': rand_string,
+            'query_arg_multiple': [rand_string, rand_string],
+            'query_arg_allowed': 'expected_1',
+            'query_arg_multiple_and_allowed': ['expected_1', 'expected_2']
+        },
+        'json': {
+            'body_arg_required': rand_string,
+            'body_arg_multiple': [rand_string, rand_string],
+            'body_arg_allowed': 'expected_1',
+            'body_arg_multiple_and_allowed': ['expected_1', 'expected_2']
+        }
+    }
+
+    with pytest.raises(FncClientError) as e:
+        client.call_endpoint(endpoint=endpoint_key, args=args)
+
+    assert spy_endpoint_validate.call_count == need_retry_attempts
+    assert spy_validate_request.call_count == need_retry_attempts
+    assert deep_diff(rest_client.validate_request_args, req_args)
+    assert mock_need_retry.call_count == need_retry_attempts
+    assert spy_send_request.call_count == need_retry_attempts
+    assert deep_diff(rest_client.send_request_args, req_args)
+    assert e.value == endpoint_response_validation_error
+    assert mock_endpoint_validate_response.call_count == need_retry_attempts
 
 
 @pytest.mark.skip('This test is in development')

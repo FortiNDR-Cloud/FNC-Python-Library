@@ -414,6 +414,7 @@ class FncApiClient:
         Returns:
             dict:  Response's json
         """
+        endpoint_key_name = endpoint if isinstance(endpoint, str) else endpoint.name
         need_retry = False
         attempt = 0
 
@@ -443,7 +444,7 @@ class FncApiClient:
                 self.logger.info("Response successfully validated.")
 
             except Exception as ex:
-                self.logger.error(f"The request to {e.get_endpoint_key().name} endpoint failed due to:")
+                self.logger.error(f"The request to {endpoint_key_name} endpoint failed due to:")
                 self.logger.error("\n".join(traceback.format_exception(ex)))
                 error = ex
 
