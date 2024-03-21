@@ -495,7 +495,7 @@ class FncApiClient:
             'muted_device': False,
             'sort_by': 'device_ip',
             'sort_order': 'asc',
-            'include': 'rules',
+            'include': 'rules, indicators',
             'limit': POLLING_MAX_DETECTIONS,
             'offset': 0
         }
@@ -655,7 +655,7 @@ class FncApiClient:
             self.logger.debug("Fetching entity's PDNS information.")
             try:
                 pdns_data = self.call_endpoint(
-                    EndpointKey.GET_ENTITY_PDNS, {'entity': entity})
+                    endpoint=EndpointKey.GET_ENTITY_PDNS, args={'entity': entity})
                 if filter_training:
                     pdns_data = filter(
                         lambda v: v['account_uuid'] != POLLING_TRAINING_ACCOUNT_ID, pdns_data)
@@ -673,7 +673,7 @@ class FncApiClient:
             self.logger.debug("Fetching entity's DHCP information.")
             try:
                 dhcp_data = self.call_endpoint(
-                    EndpointKey.GET_ENTITY_DHCP, {'entity': entity})
+                    endpoint=EndpointKey.GET_ENTITY_DHCP, args={'entity': entity})
                 if filter_training:
                     dhcp_data = filter(
                         lambda v: v['customer_id'] != POLLING_TRAINING_CUSTOMER_ID, dhcp_data)
@@ -776,7 +776,7 @@ class FncApiClient:
         while 'events' not in response or response['events']:
             try:
                 response = self.call_endpoint(
-                    endpoint=EndpointKey.GET_DETECTION_EVENTS, args=args)
+                    endpoint=EndpointKey.GET_DETECTION_EVENTS, args=args.copy())
                 args['offset'] = args.get(
                     'offset', 0) + POLLING_MAX_DETECTION_EVENTS
                 detection_events.extend(response['events'])

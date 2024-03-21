@@ -1,4 +1,6 @@
 
+import copy
+import logging
 from datetime import datetime
 
 import dateparser
@@ -320,11 +322,10 @@ def test_continuous_polling_failure(mocker):
     assert False
 
 
-@pytest.mark.skip('This test is in development')
-def test_continuous_polling(mocker):
+def test_continuous_polling_including_all(mocker):
     polling_args = {
         'polling_delay': 10,
-        'status':  'active',
+        'status':  random.choice(['active', 'resolved']),
         'pull_muted_detections': 'ALL',
         'pull_muted_rules':  'ALL',
         'pull_muted_devices':  'ALL',
@@ -341,38 +342,128 @@ def test_continuous_polling(mocker):
     agent = 'fake_agent'
 
     rest_client = MockRestClient()
-    spy_send_request = mocker.spy(rest_client, 'send_request')
-    spy_validate_request = mocker.spy(rest_client, 'validate_request')
+    mock_call_endpoint = mocker.patch('fnc.api.api_client.FncApiClient.call_endpoint', side_effect=[
+                                      copy.deepcopy(fake_detections_response),
+                                      copy.deepcopy(fake_fetch_pdns),
+                                      copy.deepcopy(fake_fetch_dhcp),
+                                      copy.deepcopy(fake_detection_events),
+                                      copy.deepcopy(empty_detection_events),
+                                      copy.deepcopy(empty_detections_response)])
 
-    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    mock_validate_token = mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
     client = FncApiClient(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
+    assert mock_validate_token.call_count == 1
 
     client.supported_api = [DetectionApi, SensorApi, EntityApi]
+
+    call = 0
+    for response in client.continuous_polling(args=polling_args):
+        call += 1
+        if call == 1:
+            assert len(response['detections']) == 1
+            detection = response['detections'][0]
+            assert 'rule_uuid' in detection and detection.get('rule_uuid') == fake_rule_id
+            assert 'rule_name' in detection and detection.get('rule_name') == fake_rule_name
+            assert 'rule_severity' in detection and detection.get('rule_severity') == fake_rule_severity
+            assert 'rule_confidence' in detection and detection.get('rule_confidence') == fake_rule_confidence
+            assert 'rule_category' in detection and detection.get('rule_category') == fake_rule_category
+            assert 'rule_description' in detection and detection.get('rule_description') == fake_rule_description
+            assert 'rule_signature' in detection and detection.get('rule_signature') == fake_rule_signature
+
+            assert 'events' in response
+            assert detection.get('uuid') in response.get('events')
+            assert len(response.get('events').get(detection.get('uuid'))) == 1
+            received_event = response.get('events').get(detection.get('uuid'))[0]
+            assert deep_diff(received_event, fake_detection_events)
+        elif call == 2:
+            assert len(response['detections']) == 0
+        else:
+            # Detections can only be returned twice in this test. The first time with one detection and the second one with none.
+            assert False
+
+    assert mock_call_endpoint.call_count == 6
+
     i = 0
-    checkpoint = ''
+    expected_endpoints = [EndpointKey.GET_DETECTIONS, EndpointKey.GET_ENTITY_PDNS, EndpointKey.GET_ENTITY_DHCP,
+                          EndpointKey.GET_DETECTION_EVENTS, EndpointKey.GET_DETECTION_EVENTS, EndpointKey.GET_DETECTIONS]
+    expected_args = [
+        {'offset': 0, 'status': polling_args.get('status'), 'sort_by': 'device_ip', 'sort_order': 'asc', 'include': 'rules, indicators'},
+        {'entity': fake_ip},
+        {'entity': fake_ip},
+        {'detection_uuid': fake_detection_id, 'offset': 0},
+        {'detection_uuid': fake_detection_id, 'offset': POLLING_MAX_DETECTION_EVENTS},
+        {'offset': POLLING_MAX_DETECTIONS, 'status': polling_args.get(
+            'status'), 'sort_by': 'device_ip', 'sort_order': 'asc', 'include': 'rules, indicators'}
+    ]
+    for c in mock_call_endpoint.call_args_list:
+        assert c.kwargs
+        assert expected_endpoints[i] == c.kwargs.get('endpoint', None)
+        received_args = c.kwargs.get('args', {})
+        assert all(k in received_args and received_args.get(k) == expected_args[i].get(k) for k in expected_args[i])
+        i += 1
 
-    running_time = datetime.now()
-    end_time = dateparser.parse('in 30 minutes')
-    while running_time < end_time:
-        client.get_logger().info(f"Running time = {running_time}")
-        client.get_logger().info(f"Running until {end_time}")
 
-        context = Context()
-        client.get_logger().info(context.get_checkpoint())
-        client.get_logger().info(context.get_polling_args())
-        context.update_checkpoint(checkpoint=checkpoint)
+def test_continuous_polling_including_nothing(mocker):
+    polling_args = {
+        'polling_delay': 10,
+        'status':  random.choice(['active', 'resolved']),
+        'pull_muted_detections': 'ALL',
+        'pull_muted_rules':  'ALL',
+        'pull_muted_devices':  'ALL',
+        'include_description': False,
+        'include_signature': False,
+        'include_pdns': False,
+        'include_dhcp': False,
+        'include_events': False,
+        'filter_training_detections': False
+    }
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
 
-        for response in client.continuous_polling(context=context, args=polling_args):
-            client.get_logger().info("-------------------------------------")
-            client.get_logger().info(
-                f"DETECTIONS: {len(response['detections'])}")
-            for detection in response['events']:
-                client.get_logger().info(
-                    f"{len(response['events'][detection])} EVENTS for {detection}")
-            client.get_logger().info(
-                f'CHECKPOINT: {context.get_checkpoint()}')
-            client.get_logger().info("-------------------------------------")
+    rest_client = MockRestClient()
+    mock_call_endpoint = mocker.patch('fnc.api.api_client.FncApiClient.call_endpoint', side_effect=[
+                                      copy.deepcopy(fake_detections_response), copy.deepcopy(empty_detections_response)])
 
-        checkpoint = context.get_checkpoint()
-        context.clear_args()
-        running_time = datetime.now()
+    mock_validate_token = mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncApiClient(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
+    assert mock_validate_token.call_count == 1
+
+    client.supported_api = [DetectionApi, SensorApi, EntityApi]
+    client.get_logger().set_level(level=logging.DEBUG)
+    call = 0
+    for response in client.continuous_polling(args=polling_args):
+        call += 1
+        if call == 1:
+            assert len(response['detections']) == 1
+            detection = response['detections'][0]
+            assert 'rule_uuid' in detection and detection.get('rule_uuid') == fake_rule_id
+            assert 'rule_name' in detection and detection.get('rule_name') == fake_rule_name
+            assert 'rule_severity' in detection and detection.get('rule_severity') == fake_rule_severity
+            assert 'rule_confidence' in detection and detection.get('rule_confidence') == fake_rule_confidence
+            assert 'rule_category' in detection and detection.get('rule_category') == fake_rule_category
+            assert 'rule_description' not in detection
+            assert 'rule_signature' not in detection
+
+            assert 'events' not in response or not response.get('events')
+        elif call == 2:
+            assert len(response['detections']) == 0
+        else:
+            # Detections can only be returned twice in this test. The first time with one detection and the second one with none.
+            assert False
+
+    assert mock_call_endpoint.call_count == 2
+
+    i = 0
+    expected_endpoints = [EndpointKey.GET_DETECTIONS, EndpointKey.GET_DETECTIONS]
+    expected_args = [
+        {'offset': 0, 'status': polling_args.get('status'), 'sort_by': 'device_ip', 'sort_order': 'asc', 'include': 'rules, indicators'},
+        {'offset': POLLING_MAX_DETECTIONS, 'status': polling_args.get(
+            'status'), 'sort_by': 'device_ip', 'sort_order': 'asc', 'include': 'rules, indicators'}
+    ]
+    for c in mock_call_endpoint.call_args_list:
+        assert c.kwargs
+        assert expected_endpoints[i] == c.kwargs.get('endpoint', None)
+        received_args = c.kwargs.get('args', {})
+        assert all(k in received_args and received_args.get(k) == expected_args[i].get(k) for k in expected_args[i])
+        i += 1
