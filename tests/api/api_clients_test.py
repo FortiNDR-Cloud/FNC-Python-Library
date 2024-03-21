@@ -1,16 +1,18 @@
 
 import copy
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 import dateparser
 import pytest
+from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
 
-from fnc.api.api_client import DetectionApi, EntityApi, FncApiClient, SensorApi
+from fnc.api.api_client import Context, DetectionApi, EntityApi, SensorApi
 from fnc.api.endpoints import EndpointKey
 from fnc.errors import ErrorMessages, ErrorType, FncClientError
 from fnc.fnc_client import FncClient
 from fnc.global_variables import *
+from fnc.utils import datetime_to_utc_str
 from tests.api.mocks import MockApi, MockEndpoint, MockRestClient
 from tests.utils import *
 
@@ -209,9 +211,144 @@ def test_get_endpoint_if_supported_succeed(mocker):
         assert e and e == e1
 
 
-@pytest.mark.skip('This test is in development')
-def test_retry_mechanism(mocker):
-    assert False
+def test_retry_mechanism_max_attempt_reached(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    error_types = list(map(lambda c: c, ErrorType))
+    error_type = random.choice(error_types)
+    fnc_error = FncClientError(
+        error_type=error_type,
+        error_message=ErrorMessages.GENERIC_ERROR_MESSAGE,
+        error_data={'error': 'error'}
+    )
+
+    max_attempt_reached = REQUEST_MAXIMUM_RETRY_ATTEMPT + random.randint(0, 999)
+    assert not client._is_retry_needed(error=fnc_error, attempt=max_attempt_reached)
+
+
+def test_retry_mechanism_max_attempt_not_reached(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    always_needs_retry = [
+        ErrorType.REQUEST_CONNECTION_ERROR,
+        ErrorType.REQUEST_TIMEOUT_ERROR,
+        ErrorType.GENERIC_ERROR,
+    ]
+    error_types = list(map(lambda c: c, ErrorType))
+    attempt = random.randint(1, REQUEST_MAXIMUM_RETRY_ATTEMPT-1)
+
+    for error_type in error_types:
+        fnc_error = FncClientError(
+            error_type=error_type,
+            error_message=ErrorMessages.GENERIC_ERROR_MESSAGE,
+            error_data={'error': 'error'}
+        )
+
+        if error_type in always_needs_retry:
+            assert client._is_retry_needed(error=fnc_error, attempt=attempt)
+        elif error_type == ErrorType.ENDPOINT_RESPONSE_VALIDATION_ERROR:
+            to_retry = FncClientError(
+                error_type=error_type,
+                error_message=ErrorMessages.GENERIC_ERROR_MESSAGE,
+                error_data={'error': 'error', 'status': random.randint(500, 599)}
+            )
+            assert client._is_retry_needed(error=to_retry, attempt=attempt)
+
+            not_to_retry = FncClientError(
+                error_type=error_type,
+                error_message=ErrorMessages.GENERIC_ERROR_MESSAGE,
+                error_data={'error': 'error', 'status': random.randint(400, 499)}
+            )
+            assert not client._is_retry_needed(error=not_to_retry, attempt=attempt)
+        else:
+            assert not client._is_retry_needed(error=fnc_error, attempt=attempt)
+
+
+def test_retry_mechanism_map_error(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+    spy_map_error = mocker.spy(client, '_map_error')
+
+    error_types = list(map(lambda c: c, ErrorType))
+    error_type = random.choice(error_types)
+    attempt = random.randint(1, REQUEST_MAXIMUM_RETRY_ATTEMPT+10)
+
+    fnc_error = FncClientError(
+        error_type=error_type,
+        error_message=ErrorMessages.GENERIC_ERROR_MESSAGE,
+        error_data={'error': 'error'}
+    )
+
+    _ = client._is_retry_needed(error=fnc_error, attempt=attempt)
+    assert spy_map_error.call_count == 0
+
+    _ = client._is_retry_needed(error=Exception(), attempt=attempt)
+    assert spy_map_error.call_count == 1
+
+
+def test_map_error(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    error_types = list(map(lambda c: c, ErrorType))
+    error_type = random.choice(error_types)
+
+    fnc_error = FncClientError(
+        error_type=error_type,
+        error_message=ErrorMessages.GENERIC_ERROR_MESSAGE,
+        error_data={'error': 'error'}
+    )
+    connection_error = ConnectionError()
+    timeout_error = Timeout()
+    http_error = HTTPError()
+    request_error = RequestException()
+    other_error = Exception()
+
+    assert client._map_error(fnc_error) == fnc_error
+
+    errors = [connection_error, timeout_error, http_error, request_error, other_error]
+    mapped_errors = []
+
+    mapped_error = client._map_error(connection_error)
+    mapped_errors.append(mapped_error)
+    assert mapped_error.error_type == ErrorType.REQUEST_CONNECTION_ERROR
+
+    mapped_error = client._map_error(timeout_error)
+    mapped_errors.append(mapped_error)
+    assert mapped_error.error_type == ErrorType.REQUEST_TIMEOUT_ERROR
+
+    mapped_error = client._map_error(http_error)
+    mapped_errors.append(mapped_error)
+    assert mapped_error.error_type == ErrorType.REQUEST_HTTP_ERROR
+
+    mapped_error = client._map_error(request_error)
+    mapped_errors.append(mapped_error)
+    assert mapped_error.error_type == ErrorType.REQUEST_ERROR
+
+    mapped_error = client._map_error(other_error)
+    mapped_errors.append(mapped_error)
+    assert mapped_error.error_type == ErrorType.GENERIC_ERROR
+
+    assert all(isinstance(e, FncClientError) for e in mapped_errors)
+    assert all('error' in mapped_errors[i].error_data and mapped_errors[i].error_data.get('error') == errors[i] for i in range(len(errors)))
 
 
 def test_call_endpoint_succeed(mocker):
@@ -710,6 +847,309 @@ def test_call_endpoint_failure_retry_stop_when_false(mocker):
     assert deep_diff(rest_client.send_request_args, req_args)
     assert e.value == endpoint_response_validation_error
     assert mock_endpoint_validate_response.call_count == need_retry_attempts
+
+
+def test_validate_continuous_polling_args_succeed(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    sort_by = 'device_ip'
+    muted = random.choice(['true', 'false', ''])
+    muted_rule = random.choice(['true', 'false', ''])
+    muted_devices = random.choice(['true', 'false', ''])
+    status = random.choice(['active', 'resolved', ''])
+
+    now = datetime.now(timezone.utc)
+    created_or_shared_start_date = datetime_to_utc_str(now - timedelta(days=random.randint(1, 100)), DEFAULT_DATE_FORMAT)
+    created_or_shared_end_date = datetime_to_utc_str(now, DEFAULT_DATE_FORMAT)
+
+    valid_args = {
+        'sort_by': sort_by,
+        'muted': muted,
+        'muted_rule': muted_rule,
+        'muted_devices': muted_devices,
+        'status': status,
+        'created_or_shared_start_date': created_or_shared_start_date,
+        'created_or_shared_end_date': created_or_shared_end_date,
+    }
+
+    client._validate_continuous_polling_args(valid_args)
+
+
+def test_validate_continuous_polling_args_failure_wrong_status(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    sort_by = 'device_ip'
+    muted = random.choice(['true', 'false', ''])
+    muted_rule = random.choice(['true', 'false', ''])
+    muted_devices = random.choice(['true', 'false', ''])
+    status = random.choice(['active', 'resolved', ''])
+
+    now = datetime.now(timezone.utc)
+    created_or_shared_start_date = datetime_to_utc_str(now - timedelta(days=random.randint(1, 100)), DEFAULT_DATE_FORMAT)
+    created_or_shared_end_date = datetime_to_utc_str(now, DEFAULT_DATE_FORMAT)
+
+    valid_args = {
+        'sort_by': sort_by,
+        'muted': muted,
+        'muted_rule': muted_rule,
+        'muted_devices': muted_devices,
+        'status': status,
+        'created_or_shared_start_date': created_or_shared_start_date,
+        'created_or_shared_end_date': created_or_shared_end_date,
+    }
+
+    client._validate_continuous_polling_args(valid_args)
+
+    invalid_args = valid_args.copy()
+    invalid_args['status'] = get_random_string(10)
+
+    with pytest.raises(FncClientError) as e:
+        client._validate_continuous_polling_args(invalid_args)
+
+    assert e.value.error_type == ErrorType.POLLING_VALIDATION_ERROR
+
+
+def test_validate_continuous_polling_args_failure_wrong_muted_values(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    sort_by = 'device_ip'
+    muted = random.choice(['true', 'false', ''])
+    muted_rule = random.choice(['true', 'false', ''])
+    muted_device = random.choice(['true', 'false', ''])
+    status = random.choice(['active', 'resolved', ''])
+
+    now = datetime.now(timezone.utc)
+    created_or_shared_start_date = datetime_to_utc_str(now - timedelta(days=random.randint(1, 100)), DEFAULT_DATE_FORMAT)
+    created_or_shared_end_date = datetime_to_utc_str(now, DEFAULT_DATE_FORMAT)
+
+    valid_args = {
+        'sort_by': sort_by,
+        'muted': muted,
+        'muted_rule': muted_rule,
+        'muted_device': muted_device,
+        'status': status,
+        'created_or_shared_start_date': created_or_shared_start_date,
+        'created_or_shared_end_date': created_or_shared_end_date,
+    }
+
+    client._validate_continuous_polling_args(valid_args)
+
+    invalid_args = valid_args.copy()
+    invalid_args['muted'] = get_random_string(10)
+
+    with pytest.raises(FncClientError) as e:
+        client._validate_continuous_polling_args(invalid_args)
+
+    assert e.value.error_type == ErrorType.POLLING_VALIDATION_ERROR
+
+    invalid_args = valid_args.copy()
+    invalid_args['muted_rule'] = get_random_string(10)
+
+    with pytest.raises(FncClientError) as e:
+        client._validate_continuous_polling_args(invalid_args)
+
+    assert e.value.error_type == ErrorType.POLLING_VALIDATION_ERROR
+
+    invalid_args = valid_args.copy()
+    invalid_args['muted_device'] = get_random_string(10)
+
+    with pytest.raises(FncClientError) as e:
+        client._validate_continuous_polling_args(invalid_args)
+
+    assert e.value.error_type == ErrorType.POLLING_VALIDATION_ERROR
+
+
+def test_validate_continuous_polling_args_failure_wrong_sort_by(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    sort_by = 'device_ip'
+    muted = random.choice(['true', 'false', ''])
+    muted_rule = random.choice(['true', 'false', ''])
+    muted_devices = random.choice(['true', 'false', ''])
+    status = random.choice(['active', 'resolved', ''])
+
+    now = datetime.now(timezone.utc)
+    created_or_shared_start_date = datetime_to_utc_str(now - timedelta(days=random.randint(1, 100)), DEFAULT_DATE_FORMAT)
+    created_or_shared_end_date = datetime_to_utc_str(now, DEFAULT_DATE_FORMAT)
+
+    valid_args = {
+        'sort_by': sort_by,
+        'muted': muted,
+        'muted_rule': muted_rule,
+        'muted_devices': muted_devices,
+        'status': status,
+        'created_or_shared_start_date': created_or_shared_start_date,
+        'created_or_shared_end_date': created_or_shared_end_date,
+    }
+
+    client._validate_continuous_polling_args(valid_args)
+
+    invalid_args = valid_args.copy()
+    invalid_args['sort_by'] = get_random_string(10)
+
+    with pytest.raises(FncClientError) as e:
+        client._validate_continuous_polling_args(invalid_args)
+
+    assert e.value.error_type == ErrorType.POLLING_VALIDATION_ERROR
+
+    invalid_args = valid_args.copy()
+    invalid_args.pop('sort_by')
+
+    with pytest.raises(FncClientError) as e:
+        client._validate_continuous_polling_args(invalid_args)
+
+    assert e.value.error_type == ErrorType.POLLING_VALIDATION_ERROR
+
+
+def test_validate_continuous_polling_args_failure_missing_date(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    sort_by = 'device_ip'
+    muted = random.choice(['true', 'false', ''])
+    muted_rule = random.choice(['true', 'false', ''])
+    muted_devices = random.choice(['true', 'false', ''])
+    status = random.choice(['active', 'resolved', ''])
+
+    now = datetime.now(timezone.utc)
+    created_or_shared_start_date = datetime_to_utc_str(now - timedelta(days=random.randint(1, 100)), DEFAULT_DATE_FORMAT)
+    created_or_shared_end_date = datetime_to_utc_str(now, DEFAULT_DATE_FORMAT)
+
+    valid_args = {
+        'sort_by': sort_by,
+        'muted': muted,
+        'muted_rule': muted_rule,
+        'muted_devices': muted_devices,
+        'status': status,
+        'created_or_shared_start_date': created_or_shared_start_date,
+        'created_or_shared_end_date': created_or_shared_end_date,
+    }
+
+    client._validate_continuous_polling_args(valid_args)
+
+    invalid_args = valid_args.copy()
+    invalid_args['status'] = get_random_string(10)
+
+    with pytest.raises(FncClientError) as e:
+        client._validate_continuous_polling_args(invalid_args)
+
+    assert e.value.error_type == ErrorType.POLLING_VALIDATION_ERROR
+
+    invalid_args = valid_args.copy()
+    invalid_args.pop('created_or_shared_start_date')
+
+    with pytest.raises(FncClientError) as e:
+        client._validate_continuous_polling_args(invalid_args)
+
+    assert e.value.error_type == ErrorType.POLLING_VALIDATION_ERROR
+
+    invalid_args = valid_args.copy()
+    invalid_args.pop('created_or_shared_end_date')
+
+    with pytest.raises(FncClientError) as e:
+        client._validate_continuous_polling_args(invalid_args)
+
+    assert e.value.error_type == ErrorType.POLLING_VALIDATION_ERROR
+
+
+def test_validate_Prepare_continuous_polling_valid_args_from_context(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    arg_key = get_random_string(10)
+    arg_value = get_random_string(10)
+    offset = random.randint(1, 10000)
+
+    args_without_offset = {
+        arg_key: arg_value
+    }
+
+    args_with_offset = {
+        arg_key: arg_value,
+        'offset': offset
+    }
+    context = Context()
+
+    mock_validate_args = mocker.patch.object(client, '_validate_continuous_polling_args')
+    context.update_polling_args(args=args_without_offset)
+    received = client._prepare_continuous_polling(context=context)
+
+    assert mock_validate_args.call_count == 1
+    assert len(received) == 2
+    assert received.get(arg_key, None) == arg_value
+    assert received.get('offset', None) == 0
+
+    mock_validate_args = mocker.patch.object(client, '_validate_continuous_polling_args')
+    context.update_polling_args(args=args_with_offset)
+    received = client._prepare_continuous_polling(context=context)
+
+    assert mock_validate_args.call_count == 1
+    assert len(received) == 2
+    assert received.get(arg_key, None) == arg_value
+    assert received.get('offset', None) == offset
+
+
+def test_validate_Prepare_continuous_polling_invalid_args_from_context(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    arg_key = get_random_string(10)
+    arg_value = get_random_string(10)
+
+    args_without_offset = {
+        arg_key: arg_value
+    }
+
+    context = Context()
+
+    fnc_error = FncClientError(
+        error_type=ErrorType.GENERIC_ERROR,
+        error_message=ErrorMessages.GENERIC_ERROR_MESSAGE,
+        error_data={'error': 'error'}
+    )
+    mock_validate_args = mocker.patch.object(client, '_validate_continuous_polling_args', side_effect=[fnc_error, None])
+
+    context.update_polling_args(args=args_without_offset)
+    received = client._prepare_continuous_polling(context=context)
+
+    default_args = client.get_default_polling_args()
+
+    assert mock_validate_args.call_count == 2
+    assert all(k in received and str(received.get(k)).lower() == str(default_args.get(k)).lower() for k in default_args)
+    assert 'created_or_shared_start_date' in received
+    assert 'created_or_shared_end_date' in received
 
 
 @pytest.mark.skip('This test is in development')
