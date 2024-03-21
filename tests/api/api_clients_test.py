@@ -6,9 +6,10 @@ from datetime import datetime
 import dateparser
 import pytest
 
-from fnc.api.api_client import Context, DetectionApi, EntityApi, FncApiClient, SensorApi
+from fnc.api.api_client import DetectionApi, EntityApi, FncApiClient, SensorApi
 from fnc.api.endpoints import EndpointKey
 from fnc.errors import ErrorType, FncClientError
+from fnc.fnc_client import FncClient
 from fnc.global_variables import *
 from tests.api.mocks import MockApi, MockEndpoint, MockRestClient
 from tests.utils import *
@@ -21,7 +22,7 @@ def test_get_url_failure_missing_url_args(mocker):
 
     api = MockApi()
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
-    client = FncApiClient(name=agent, api_token=api_token, domain=domain, rest_client=None)
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=None)
     endpoints = api.get_supported_endpoints()
 
     url_arg_1: str = 'fake1'
@@ -47,7 +48,7 @@ def test_get_url_failure_missing_api_name(mocker):
 
     api = MockApi()
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
-    client = FncApiClient(name=agent, api_token=api_token, domain=domain, rest_client=None)
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=None)
     endpoints = api.get_supported_endpoints()
 
     url_arg_1: str = 'fake1'
@@ -77,7 +78,7 @@ def test_get_url_succeed(mocker):
 
     api = MockApi()
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
-    client = FncApiClient(name=agent, api_token=api_token, domain=domain, rest_client=None)
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=None)
     endpoints = api.get_supported_endpoints()
 
     url_arg_1: str = 'fake1'
@@ -104,7 +105,7 @@ def test_get_endpoint_if_supported_failure_no_endpoint(mocker):
     agent = 'fake_agent'
 
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
-    client = FncApiClient(name=agent, api_token=api_token, domain=domain, rest_client=None)
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=None)
 
     with pytest.raises(FncClientError) as e:
         _, _ = client.get_endpoint_if_supported(endpoint=None)
@@ -133,7 +134,7 @@ def test_get_endpoint_if_supported_failure_no_support(mocker):
     api: MockApi = MockApi(endpoints_keys=supported)
 
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
-    client = FncApiClient(name=agent, api_token=api_token, domain=domain, rest_client=None)
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=None)
     client.supported_api = [api]
 
     key_name = unsupported[0].title()
@@ -163,7 +164,7 @@ def test_get_endpoint_if_supported_failure_multiple_support(mocker):
     api2: MockApi = MockApi(endpoints_keys=supported)
 
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
-    client = FncApiClient(name=agent, api_token=api_token, domain=domain, rest_client=None)
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=None)
     client.supported_api = [api1, api2]
 
     key_name = supported[0].title()
@@ -193,7 +194,7 @@ def test_get_endpoint_if_supported_succeed(mocker):
     api2: MockApi = MockApi(endpoints_keys=supported[slice(1, 2)])
 
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
-    client = FncApiClient(name=agent, api_token=api_token, domain=domain, rest_client=None)
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=None)
     client.supported_api = [api1, api2]
 
     for k in supported:
@@ -221,7 +222,7 @@ def test_call_endpoint_succeed(mocker):
     api1: MockApi = MockApi(endpoints_keys=supported)
 
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
-    client = FncApiClient(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
     client.supported_api = [api1]
 
     key_name = supported[0].title()
@@ -351,7 +352,7 @@ def test_continuous_polling_including_all(mocker):
                                       copy.deepcopy(empty_detections_response)])
 
     mock_validate_token = mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
-    client = FncApiClient(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
     assert mock_validate_token.call_count == 1
 
     client.supported_api = [DetectionApi, SensorApi, EntityApi]
@@ -426,7 +427,7 @@ def test_continuous_polling_including_nothing(mocker):
                                       copy.deepcopy(fake_detections_response), copy.deepcopy(empty_detections_response)])
 
     mock_validate_token = mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
-    client = FncApiClient(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
     assert mock_validate_token.call_count == 1
 
     client.supported_api = [DetectionApi, SensorApi, EntityApi]

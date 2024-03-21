@@ -7,6 +7,7 @@ from .metastream import FncMetastreamClient
 class FncClient:
     @classmethod
     def get_api_client(
+        cls,
         name: str,
         api_token: str = None,
         domain: str = CLIENT_DEFAULT_DOMAIN,
@@ -17,6 +18,7 @@ class FncClient:
 
     @classmethod
     def get_metastream_client(
+        cls,
         name: str,
         account_code: str = None,
         access_key: str = None,

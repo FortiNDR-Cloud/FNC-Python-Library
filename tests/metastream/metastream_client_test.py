@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from fnc import FncClient
 from fnc.global_variables import *
 # from fnc.metastream import fetch_events, fetch_events_by_day
 from fnc.metastream.metastream_client import *
@@ -14,7 +15,7 @@ from tests.utils import *
 def test_validate():
     account_code = get_random_string(10)
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code=account_code,
         access_key='access_key',
@@ -61,6 +62,7 @@ def test_validate():
     assert e.value.error_type == ErrorType.EVENTS_FETCH_VALIDATION_ERROR
 
     with pytest.raises(FncClientError) as e:
+        # TODO: Check
         client._validate(event_types=right_event_types, start_date=within_same_day_2 -
                          timedelta(hours=random.randint(25, 7*24)), end_date=within_same_day_2)
     assert e.value.error_type == ErrorType.EVENTS_FETCH_VALIDATION_ERROR
@@ -80,7 +82,7 @@ def test_validate():
 def test_get_customer_prefix():
     account_code = get_random_string(10)
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code=account_code,
         access_key='access_key',
@@ -93,7 +95,7 @@ def test_get_customer_prefix():
 def test__prefix_to_datetime():
     account_code = get_random_string(10)
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code=account_code,
         access_key='access_key',
@@ -113,7 +115,7 @@ def test__prefix_to_datetime():
 
 
 def test_fetch_event_types():
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code='ac',
         access_key='access_key',
@@ -154,7 +156,7 @@ def test_get_prefixes_succeed(mocker):
     mock_fetch_common_prefixes = mocker.patch('fnc.metastream.s3_client._S3Client.fetch_common_prefixes',
                                               side_effect=[iter(call_1), iter(call_2), iter(call_3), iter(call_4)])
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code='ac',
         access_key='access_key',
@@ -266,7 +268,7 @@ def test_get_events_from_prefix_no_limit(mocker):
     start_date = datetime(2024, 3, 19, 0, 0, 0, 000000)
     end_date = datetime(2024, 3, 20, 23, 59, 59, 999999)
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code='ac',
         access_key='access_key',
@@ -342,7 +344,7 @@ def test_get_events_from_prefix_under_limit_partial_file(mocker):
     start_date = datetime(2024, 3, 19, 0, 0, 0, 000000)
     end_date = datetime(2024, 3, 20, 23, 59, 59, 999999)
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code='ac',
         access_key='access_key',
@@ -418,7 +420,7 @@ def test_get_events_from_prefix_under_limit_whole_file(mocker):
     start_date = datetime(2024, 3, 19, 0, 0, 0, 000000)
     end_date = datetime(2024, 3, 20, 23, 59, 59, 999999)
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code='ac',
         access_key='access_key',
@@ -464,7 +466,7 @@ def test_get_events_from_prefix_over_limit(mocker):
     start_date = datetime(2024, 3, 19, 0, 0, 0, 000000)
     end_date = datetime(2024, 3, 20, 23, 59, 59, 999999)
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code='ac',
         access_key='access_key',
@@ -497,7 +499,7 @@ def test_get_events_from_prefix_over_limit(mocker):
 
 def test_fetch_events_time_window_to_long():
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code='ac',
         access_key='access_key',
@@ -521,7 +523,7 @@ def test_fetch_events_time_window_to_long():
 
 def test_fetch_events_unsupported_event_type():
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code='ac',
         access_key='access_key',
@@ -545,7 +547,7 @@ def test_fetch_events_unsupported_event_type():
 
 def test_fetch_events_inverted_time_window():
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code='ac',
         access_key='access_key',
@@ -587,7 +589,7 @@ def test_fetch_events(mocker):
     mock_get_events_from_prefix = mocker.patch(
         'fnc.metastream.metastream_client.FncMetastreamClient._get_events_from_prefix', side_effect=expected)
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code='ac',
         access_key='access_key',
@@ -636,7 +638,7 @@ def test_fetch_events(mocker):
 
 def test_fetch_events_by_day_to_late():
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code='ac',
         access_key='access_key',
@@ -660,7 +662,7 @@ def test_fetch_events_by_day_to_late():
 
 def test_fetch_events_by_day_unsupported_event_type():
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code='ac',
         access_key='access_key',
@@ -684,7 +686,7 @@ def test_fetch_events_by_day_unsupported_event_type():
 
 def test_fetch_events_by_day_to_soon():
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code='ac',
         access_key='access_key',
@@ -726,7 +728,7 @@ def test_fetch_events_by_day(mocker):
     mock_get_events_from_prefix = mocker.patch(
         'fnc.metastream.metastream_client.FncMetastreamClient._get_events_from_prefix', side_effect=expected)
 
-    client: FncMetastreamClient = FncMetastreamClient(
+    client: FncMetastreamClient = FncClient.get_metastream_client(
         name='Test',
         account_code='ac',
         access_key='access_key',
