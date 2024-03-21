@@ -6,11 +6,9 @@ from urllib.parse import urlparse
 import requests
 from requests import Session
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
 from requests.packages.urllib3.util.ssl_ import create_urllib3_context
 
 from ..errors import ErrorMessages, ErrorType, FncClientError
-from ..global_variables import REQUEST_DEFAULT_TIMEOUT
 from ..logger import FncClientLogger
 
 CIPHERS_STRING = '@SECLEVEL=1:ECDHE+AESGCM:ECDHE+CHACHA20:DHE+AESGCM:DHE+CHACHA20:ECDH+AESGCM:DH+AESGCM:' \

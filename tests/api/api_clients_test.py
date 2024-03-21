@@ -3,7 +3,6 @@ import copy
 import logging
 from datetime import datetime, timedelta, timezone
 
-import dateparser
 import pytest
 from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
 

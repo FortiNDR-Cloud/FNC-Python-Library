@@ -12,7 +12,7 @@ from fnc.metastream.s3_client import Context
 from tests.utils import *
 
 
-def test_validate():
+def test_validate_succeed():
     account_code = get_random_string(10)
 
     client: FncMetastreamClient = FncClient.get_metastream_client(
@@ -23,22 +23,42 @@ def test_validate():
         bucket=METASTREAM_DEFAULT_BUCKET
     )
 
-    right_event_types = []
-    wrong_event_types = []
     event_types_len = random.randint(1, len(METASTREAM_SUPPORTED_EVENT_TYPES))
-    for i in range(event_types_len):
-        right_event_types.append(random.choice(METASTREAM_SUPPORTED_EVENT_TYPES))
-        wrong_event_types.append(random.choice(METASTREAM_SUPPORTED_EVENT_TYPES))
-
-    wrong_event_types[random.randint(0, event_types_len-1)] = get_random_string(10)
+    right_event_types = random.sample(METASTREAM_SUPPORTED_EVENT_TYPES, event_types_len)
 
     now = datetime.now(tz=timezone.utc)
-    before_7_days = now - timedelta(days=random.randint(8, 365))
     before_24_hours = now - timedelta(hours=random.randint(24, 7*24))
     within_same_day_1 = now - timedelta(hours=random.randint(0, now.hour))
     within_same_day_2 = now - timedelta(hours=random.randint(0, now.hour))
-    after_now_1 = now + timedelta(seconds=1)
-    after_now_2 = now + timedelta(seconds=random.randint(2, 365*24*60*60))
+
+    if within_same_day_1 > within_same_day_2:
+        dt = within_same_day_1
+        within_same_day_1 = within_same_day_2
+        within_same_day_2 = dt
+
+    client._validate(event_types=right_event_types, start_date=before_24_hours, end_date=None)
+    client._validate(event_types=right_event_types, start_date=within_same_day_1, end_date=within_same_day_2)
+
+
+def test_validate_failure_unsupported_event_type():
+    account_code = get_random_string(10)
+
+    client: FncMetastreamClient = FncClient.get_metastream_client(
+        name='Test',
+        account_code=account_code,
+        access_key='access_key',
+        secret_key='secret_key',
+        bucket=METASTREAM_DEFAULT_BUCKET
+    )
+
+    event_types_len = random.randint(1, len(METASTREAM_SUPPORTED_EVENT_TYPES))
+    wrong_event_types = random.sample(METASTREAM_SUPPORTED_EVENT_TYPES, event_types_len)
+    wrong_event_types[random.randint(0, event_types_len-1)] = get_random_string(10)
+
+    now = datetime.now(tz=timezone.utc)
+    before_24_hours = now - timedelta(hours=random.randint(24, 7*24))
+    within_same_day_1 = now - timedelta(hours=random.randint(0, now.hour))
+    within_same_day_2 = now - timedelta(hours=random.randint(0, now.hour))
 
     if within_same_day_1 > within_same_day_2:
         dt = within_same_day_1
@@ -53,30 +73,101 @@ def test_validate():
         client._validate(event_types=wrong_event_types, start_date=within_same_day_1, end_date=within_same_day_2)
     assert e.value.error_type == ErrorType.EVENTS_FETCH_VALIDATION_ERROR
 
+
+def test_validate_failure_to_late():
+    account_code = get_random_string(10)
+
+    client: FncMetastreamClient = FncClient.get_metastream_client(
+        name='Test',
+        account_code=account_code,
+        access_key='access_key',
+        secret_key='secret_key',
+        bucket=METASTREAM_DEFAULT_BUCKET
+    )
+
+    event_types_len = random.randint(1, len(METASTREAM_SUPPORTED_EVENT_TYPES))
+    right_event_types = random.sample(METASTREAM_SUPPORTED_EVENT_TYPES, event_types_len)
+
+    now = datetime.now(tz=timezone.utc)
+    before_7_days = now - timedelta(days=random.randint(8, 365))
+    within_same_day_1 = now - timedelta(hours=random.randint(0, now.hour))
+    within_same_day_2 = now - timedelta(hours=random.randint(0, now.hour))
+
+    if within_same_day_1 > within_same_day_2:
+        dt = within_same_day_1
+        within_same_day_1 = within_same_day_2
+        within_same_day_2 = dt
+
     with pytest.raises(FncClientError) as e:
         client._validate(event_types=right_event_types, start_date=before_7_days, end_date=None)
     assert e.value.error_type == ErrorType.EVENTS_FETCH_VALIDATION_ERROR
+
+    with pytest.raises(FncClientError) as e:
+        client._validate(event_types=right_event_types, start_date=within_same_day_1 -
+                         timedelta(hours=random.randint(25, 7*24)), end_date=within_same_day_1)
+    assert e.value.error_type == ErrorType.EVENTS_FETCH_VALIDATION_ERROR
+
+
+def test_validate_failure_to_soon():
+    account_code = get_random_string(10)
+
+    client: FncMetastreamClient = FncClient.get_metastream_client(
+        name='Test',
+        account_code=account_code,
+        access_key='access_key',
+        secret_key='secret_key',
+        bucket=METASTREAM_DEFAULT_BUCKET
+    )
+
+    event_types_len = random.randint(1, len(METASTREAM_SUPPORTED_EVENT_TYPES))
+    right_event_types = random.sample(METASTREAM_SUPPORTED_EVENT_TYPES, event_types_len)
+
+    now = datetime.now(tz=timezone.utc)
+    within_same_day_1 = now - timedelta(hours=random.randint(0, now.hour))
+    within_same_day_2 = now - timedelta(hours=random.randint(0, now.hour))
+    after_now_1 = now + timedelta(seconds=1)
+    after_now_2 = now + timedelta(seconds=random.randint(2, 365*24*60*60))
+
+    if within_same_day_1 > within_same_day_2:
+        dt = within_same_day_1
+        within_same_day_1 = within_same_day_2
+        within_same_day_2 = dt
 
     with pytest.raises(FncClientError) as e:
         client._validate(event_types=right_event_types, start_date=within_same_day_1, end_date=None)
     assert e.value.error_type == ErrorType.EVENTS_FETCH_VALIDATION_ERROR
 
     with pytest.raises(FncClientError) as e:
-        # TODO: Check
-        client._validate(event_types=right_event_types, start_date=within_same_day_2 -
-                         timedelta(hours=random.randint(25, 7*24)), end_date=within_same_day_2)
+        client._validate(event_types=right_event_types, start_date=after_now_1, end_date=after_now_2)
     assert e.value.error_type == ErrorType.EVENTS_FETCH_VALIDATION_ERROR
+
+
+def test_validate_failure_inverted_time_window():
+    account_code = get_random_string(10)
+
+    client: FncMetastreamClient = FncClient.get_metastream_client(
+        name='Test',
+        account_code=account_code,
+        access_key='access_key',
+        secret_key='secret_key',
+        bucket=METASTREAM_DEFAULT_BUCKET
+    )
+
+    event_types_len = random.randint(1, len(METASTREAM_SUPPORTED_EVENT_TYPES))
+    right_event_types = random.sample(METASTREAM_SUPPORTED_EVENT_TYPES, event_types_len)
+
+    now = datetime.now(tz=timezone.utc)
+    within_same_day_1 = now - timedelta(hours=random.randint(0, now.hour))
+    within_same_day_2 = now - timedelta(hours=random.randint(0, now.hour), seconds=1)
+
+    if within_same_day_1 > within_same_day_2:
+        dt = within_same_day_1
+        within_same_day_1 = within_same_day_2
+        within_same_day_2 = dt
 
     with pytest.raises(FncClientError) as e:
         client._validate(event_types=right_event_types, start_date=within_same_day_2, end_date=within_same_day_1)
     assert e.value.error_type == ErrorType.EVENTS_FETCH_VALIDATION_ERROR
-
-    with pytest.raises(FncClientError) as e:
-        client._validate(event_types=right_event_types, start_date=after_now_1, end_date=after_now_2)
-    assert e.value.error_type == ErrorType.EVENTS_FETCH_VALIDATION_ERROR
-
-    client._validate(event_types=right_event_types, start_date=before_24_hours, end_date=None)
-    client._validate(event_types=right_event_types, start_date=within_same_day_1, end_date=within_same_day_2)
 
 
 def test_get_customer_prefix():
