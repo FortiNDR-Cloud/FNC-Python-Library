@@ -1076,7 +1076,7 @@ def test_validate_continuous_polling_args_failure_missing_date(mocker):
     assert e.value.error_type == ErrorType.POLLING_VALIDATION_ERROR
 
 
-def test_validate_Prepare_continuous_polling_valid_args_from_context(mocker):
+def test_prepare_continuous_polling_valid_args_from_context(mocker):
     api_token = 'fake_api_token'
     domain = 'fake_domain'
     agent = 'fake_agent'
@@ -1117,7 +1117,7 @@ def test_validate_Prepare_continuous_polling_valid_args_from_context(mocker):
     assert received.get('offset', None) == offset
 
 
-def test_validate_Prepare_continuous_polling_invalid_args_from_context(mocker):
+def test_prepare_continuous_polling_invalid_args_from_context(mocker):
     api_token = 'fake_api_token'
     domain = 'fake_domain'
     agent = 'fake_agent'
@@ -1147,6 +1147,23 @@ def test_validate_Prepare_continuous_polling_invalid_args_from_context(mocker):
     default_args = client.get_default_polling_args()
 
     assert mock_validate_args.call_count == 2
+    assert all(k in received and str(received.get(k)).lower() == str(default_args.get(k)).lower() for k in default_args)
+    assert 'created_or_shared_start_date' in received
+    assert 'created_or_shared_end_date' in received
+
+
+def test_prepare_continuous_polling_without_args(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    received = client._prepare_continuous_polling()
+
+    default_args = client.get_default_polling_args()
+
     assert all(k in received and str(received.get(k)).lower() == str(default_args.get(k)).lower() for k in default_args)
     assert 'created_or_shared_start_date' in received
     assert 'created_or_shared_end_date' in received
