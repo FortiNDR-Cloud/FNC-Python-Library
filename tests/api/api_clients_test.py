@@ -879,6 +879,92 @@ def test_validate_continuous_polling_args_succeed(mocker):
     client._validate_continuous_polling_args(valid_args)
 
 
+def test_and_validate_get_search_window_succeed(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    now = datetime.now(timezone.utc)
+
+    default_delay = 10
+    delay = random.randint(11, 50)
+
+    default_start_date = now - timedelta(days=7)
+
+    start_date = now - timedelta(minutes=random.randint(delay+1, 100))
+    start_date_str = datetime_to_utc_str(start_date)
+
+    checkpoint = now - timedelta(minutes=random.randint(delay+1, 100))
+    checkpoint_str = datetime_to_utc_str(checkpoint)
+
+    end_date = now - timedelta(minutes=delay)
+    default_end_date = now - timedelta(minutes=default_delay)
+
+    received_start_date, received_end_date = client._get_and_validate_search_window(
+        start_date_str=start_date_str, polling_delay=delay, checkpoint=checkpoint_str)
+
+    assert received_start_date == checkpoint
+    assert received_end_date - end_date < timedelta(seconds=1)
+
+    received_start_date, received_end_date = client._get_and_validate_search_window(
+        start_date_str=start_date_str, polling_delay=delay)
+
+    assert received_start_date == start_date
+    assert received_end_date - end_date < timedelta(seconds=1)
+
+    received_start_date, received_end_date = client._get_and_validate_search_window(polling_delay=delay)
+
+    assert received_start_date - default_start_date < timedelta(seconds=1)
+    assert received_end_date - end_date < timedelta(seconds=1)
+
+    received_start_date, received_end_date = client._get_and_validate_search_window()
+
+    assert received_start_date - default_start_date < timedelta(seconds=1)
+    assert received_end_date - default_end_date < timedelta(seconds=1)
+
+
+def test_and_validate_get_search_window_failure_inverted(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    now = datetime.now(timezone.utc)
+
+    delay = random.randint(11, 100)
+
+    start_date = now - timedelta(minutes=random.randint(1, delay-1))
+    start_date_str = datetime_to_utc_str(start_date)
+
+    with pytest.raises(FncClientError) as e:
+        _, _ = client._get_and_validate_search_window(
+            start_date_str=start_date_str, polling_delay=delay)
+
+    assert e.value.error_type == ErrorType.POLLING_INVALID_TIME_WINDOW_ERROR
+
+
+def test_and_validate_get_search_window_failure_invalid_start_date(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    start_date_str = get_random_string(10)
+
+    with pytest.raises(FncClientError) as e:
+        _, _ = client._get_and_validate_search_window(
+            start_date_str=start_date_str)
+
+    assert e.value.error_type == ErrorType.POLLING_TIME_WINDOW_ERROR
+
+
 def test_validate_continuous_polling_args_failure_wrong_status(mocker):
     api_token = 'fake_api_token'
     domain = 'fake_domain'
@@ -1168,12 +1254,7 @@ def test_prepare_continuous_polling_without_args(mocker):
     assert 'created_or_shared_end_date' in received
 
 
-@pytest.mark.skip('This test is in development')
-def test_continuous_polling_failure(mocker):
-    assert False
-
-
-def test_continuous_polling_including_all(mocker):
+def test_prepare_continuous_polling_validate_args_before_return_them(mocker):
     polling_args = {
         'polling_delay': 10,
         'status':  random.choice(['active', 'resolved']),
@@ -1188,70 +1269,27 @@ def test_continuous_polling_including_all(mocker):
         'filter_training_detections': True,
         'start_date': '1 hour'
     }
+
     api_token = 'fake_api_token'
     domain = 'fake_domain'
     agent = 'fake_agent'
 
-    rest_client = MockRestClient()
-    mock_call_endpoint = mocker.patch('fnc.api.api_client.FncApiClient.call_endpoint', side_effect=[
-                                      copy.deepcopy(fake_detections_response),
-                                      copy.deepcopy(fake_fetch_pdns),
-                                      copy.deepcopy(fake_fetch_dhcp),
-                                      copy.deepcopy(fake_detection_events),
-                                      copy.deepcopy(empty_detection_events),
-                                      copy.deepcopy(empty_detections_response)])
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
 
-    mock_validate_token = mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
-    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
-    assert mock_validate_token.call_count == 1
+    mock_validate_args = mocker.patch.object(client, '_validate_continuous_polling_args')
+    received_args = client._prepare_continuous_polling(args=polling_args)
 
-    client.supported_api = [DetectionApi, SensorApi, EntityApi]
+    assert mock_validate_args.call_count == 1
 
-    call = 0
-    for response in client.continuous_polling(args=polling_args):
-        call += 1
-        if call == 1:
-            assert len(response['detections']) == 1
-            detection = response['detections'][0]
-            assert 'rule_uuid' in detection and detection.get('rule_uuid') == fake_rule_id
-            assert 'rule_name' in detection and detection.get('rule_name') == fake_rule_name
-            assert 'rule_severity' in detection and detection.get('rule_severity') == fake_rule_severity
-            assert 'rule_confidence' in detection and detection.get('rule_confidence') == fake_rule_confidence
-            assert 'rule_category' in detection and detection.get('rule_category') == fake_rule_category
-            assert 'rule_description' in detection and detection.get('rule_description') == fake_rule_description
-            assert 'rule_signature' in detection and detection.get('rule_signature') == fake_rule_signature
+    for c in mock_validate_args.call_args_list:
+        assert deep_diff(received_args, c.kwargs)
+        # assert all(k in received_args and received_args.get(k) == expected_args[i].get(k) for k in c.kwargs)
 
-            assert 'events' in response
-            assert detection.get('uuid') in response.get('events')
-            assert len(response.get('events').get(detection.get('uuid'))) == 1
-            received_event = response.get('events').get(detection.get('uuid'))[0]
-            assert deep_diff(received_event, fake_detection_events)
-        elif call == 2:
-            assert len(response['detections']) == 0
-        else:
-            # Detections can only be returned twice in this test. The first time with one detection and the second one with none.
-            assert False
 
-    assert mock_call_endpoint.call_count == 6
-
-    i = 0
-    expected_endpoints = [EndpointKey.GET_DETECTIONS, EndpointKey.GET_ENTITY_PDNS, EndpointKey.GET_ENTITY_DHCP,
-                          EndpointKey.GET_DETECTION_EVENTS, EndpointKey.GET_DETECTION_EVENTS, EndpointKey.GET_DETECTIONS]
-    expected_args = [
-        {'offset': 0, 'status': polling_args.get('status'), 'sort_by': 'device_ip', 'sort_order': 'asc', 'include': 'rules, indicators'},
-        {'entity': fake_ip},
-        {'entity': fake_ip},
-        {'detection_uuid': fake_detection_id, 'offset': 0},
-        {'detection_uuid': fake_detection_id, 'offset': POLLING_MAX_DETECTION_EVENTS},
-        {'offset': POLLING_MAX_DETECTIONS, 'status': polling_args.get(
-            'status'), 'sort_by': 'device_ip', 'sort_order': 'asc', 'include': 'rules, indicators'}
-    ]
-    for c in mock_call_endpoint.call_args_list:
-        assert c.kwargs
-        assert expected_endpoints[i] == c.kwargs.get('endpoint', None)
-        received_args = c.kwargs.get('args', {})
-        assert all(k in received_args and received_args.get(k) == expected_args[i].get(k) for k in expected_args[i])
-        i += 1
+@pytest.mark.skip('This test is in development')
+def test_continuous_polling_failure(mocker):
+    assert False
 
 
 def test_continuous_polling_including_nothing(mocker):
@@ -1273,8 +1311,11 @@ def test_continuous_polling_including_nothing(mocker):
     agent = 'fake_agent'
 
     rest_client = MockRestClient()
+    detections_response = get_fake_detections_response(d_count=1, r_count=1)
+    fake_rule = detections_response['rules'][0]
+
     mock_call_endpoint = mocker.patch('fnc.api.api_client.FncApiClient.call_endpoint', side_effect=[
-                                      copy.deepcopy(fake_detections_response), copy.deepcopy(empty_detections_response)])
+                                      copy.deepcopy(detections_response), copy.deepcopy(get_empty_detections_response())])
 
     mock_validate_token = mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
     client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
@@ -1288,11 +1329,11 @@ def test_continuous_polling_including_nothing(mocker):
         if call == 1:
             assert len(response['detections']) == 1
             detection = response['detections'][0]
-            assert 'rule_uuid' in detection and detection.get('rule_uuid') == fake_rule_id
-            assert 'rule_name' in detection and detection.get('rule_name') == fake_rule_name
-            assert 'rule_severity' in detection and detection.get('rule_severity') == fake_rule_severity
-            assert 'rule_confidence' in detection and detection.get('rule_confidence') == fake_rule_confidence
-            assert 'rule_category' in detection and detection.get('rule_category') == fake_rule_category
+            assert 'rule_uuid' in detection and detection.get('rule_uuid') == fake_rule['uuid']
+            assert 'rule_name' in detection and detection.get('rule_name') == fake_rule['name']
+            assert 'rule_severity' in detection and detection.get('rule_severity') == fake_rule['severity']
+            assert 'rule_confidence' in detection and detection.get('rule_confidence') == fake_rule['confidence']
+            assert 'rule_category' in detection and detection.get('rule_category') == fake_rule['category']
             assert 'rule_description' not in detection
             assert 'rule_signature' not in detection
 
@@ -1318,3 +1359,149 @@ def test_continuous_polling_including_nothing(mocker):
         received_args = c.kwargs.get('args', {})
         assert all(k in received_args and received_args.get(k) == expected_args[i].get(k) for k in expected_args[i])
         i += 1
+
+
+def test_continuous_polling_including_all(mocker):
+    polling_args = {
+        'polling_delay': 10,
+        'status':  random.choice(['active', 'resolved']),
+        'pull_muted_detections': 'ALL',
+        'pull_muted_rules':  'ALL',
+        'pull_muted_devices':  'ALL',
+        'include_description': True,
+        'include_signature': True,
+        'include_pdns': True,
+        'include_dhcp': True,
+        'include_events': True,
+        'filter_training_detections': True,
+        'start_date': '1 hour'
+    }
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    rest_client = MockRestClient()
+    detections_response = get_fake_detections_response(d_count=1, r_count=1)
+    fake_rule = detections_response['rules'][0]
+    fake_detection = detections_response['detections'][0]
+    detections_event_response = get_fake_detection_events_response(count=1, detections=detections_response['detections'])
+    fake_detection_events = detections_event_response['events']
+
+    mock_call_endpoint = mocker.patch('fnc.api.api_client.FncApiClient.call_endpoint', side_effect=[
+                                      copy.deepcopy(detections_response),
+                                      copy.deepcopy(get_fetch_pdns_response(count=1)),
+                                      copy.deepcopy(get_fetch_dhcp_response(count=1)),
+                                      copy.deepcopy(detections_event_response),
+                                      copy.deepcopy(get_empty_detection_events_response()),
+                                      copy.deepcopy(get_empty_detections_response())])
+
+    mock_validate_token = mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
+    assert mock_validate_token.call_count == 1
+
+    client.supported_api = [DetectionApi, SensorApi, EntityApi]
+
+    call = 0
+    for response in client.continuous_polling(args=polling_args):
+        call += 1
+        if call == 1:
+            assert len(response['detections']) == 1
+            detection = response['detections'][0]
+            assert 'rule_uuid' in detection and detection.get('rule_uuid') == fake_rule['uuid']
+            assert 'rule_name' in detection and detection.get('rule_name') == fake_rule['name']
+            assert 'rule_severity' in detection and detection.get('rule_severity') == fake_rule['severity']
+            assert 'rule_confidence' in detection and detection.get('rule_confidence') == fake_rule['confidence']
+            assert 'rule_category' in detection and detection.get('rule_category') == fake_rule['category']
+            assert 'rule_description' in detection and detection.get('rule_description') == fake_rule['description']
+            assert 'rule_signature' in detection and detection.get('rule_signature') == fake_rule['query_signature']
+
+            assert 'events' in response
+            assert detection.get('uuid') in response.get('events')
+            assert len(response.get('events').get(detection.get('uuid'))) == 1
+            received_event = response.get('events').get(detection.get('uuid'))[0]
+            assert deep_diff(received_event, fake_detection_events)
+        elif call == 2:
+            assert len(response['detections']) == 0
+        else:
+            # Detections can only be returned twice in this test. The first time with one detection and the second one with none.
+            assert False
+
+    assert mock_call_endpoint.call_count == 6
+
+    i = 0
+    expected_endpoints = [EndpointKey.GET_DETECTIONS, EndpointKey.GET_ENTITY_PDNS, EndpointKey.GET_ENTITY_DHCP,
+                          EndpointKey.GET_DETECTION_EVENTS, EndpointKey.GET_DETECTION_EVENTS, EndpointKey.GET_DETECTIONS]
+    expected_args = [
+        {'offset': 0, 'status': polling_args.get('status'), 'sort_by': 'device_ip', 'sort_order': 'asc', 'include': 'rules, indicators'},
+        {'entity': fake_detection['device_ip']},
+        {'entity': fake_detection['device_ip']},
+        {'detection_uuid': fake_detection['uuid'], 'offset': 0},
+        {'detection_uuid': fake_detection['uuid'], 'offset': POLLING_MAX_DETECTION_EVENTS},
+        {'offset': POLLING_MAX_DETECTIONS, 'status': polling_args.get(
+            'status'), 'sort_by': 'device_ip', 'sort_order': 'asc', 'include': 'rules, indicators'}
+    ]
+    for c in mock_call_endpoint.call_args_list:
+        assert c.kwargs
+        assert expected_endpoints[i] == c.kwargs.get('endpoint', None)
+        received_args = c.kwargs.get('args', {})
+        assert all(k in received_args and received_args.get(k) == expected_args[i].get(k) for k in expected_args[i])
+        i += 1
+
+
+def test_continuous_polling_failure_get_detections_fails(mocker):
+    polling_args = {
+        'polling_delay': 10,
+        'status':  random.choice(['active', 'resolved']),
+        'pull_muted_detections': 'ALL',
+        'pull_muted_rules':  'ALL',
+        'pull_muted_devices':  'ALL',
+        'include_description': True,
+        'include_signature': True,
+        'include_pdns': True,
+        'include_dhcp': True,
+        'include_events': True,
+        'filter_training_detections': True,
+        'start_date': '1 hour'
+    }
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    unexpected_error = Exception()
+
+    inverted_window_error = FncClientError(
+        error_type=ErrorType.POLLING_INVALID_TIME_WINDOW_ERROR,
+        error_message=ErrorMessages.POLLING_INVALID_TIME_WINDOW_ERROR
+    )
+
+    known_error = FncClientError(
+        ErrorType.REQUEST_CONNECTION_ERROR,
+        ErrorMessages.REQUEST_CONNECTION_ERROR,
+        {'url': 'masked_url', 'error': 'error'}
+    )
+
+    rest_client = MockRestClient()
+
+    mock_validate_token = mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=rest_client)
+    assert mock_validate_token.call_count == 1
+
+    client.supported_api = [DetectionApi, SensorApi, EntityApi]
+
+    mocker.patch('fnc.api.api_client.FncApiClient.call_endpoint', side_effect=[inverted_window_error])
+    for response in client.continuous_polling(args=polling_args):
+        assert response == {}
+
+    mocker.patch('fnc.api.api_client.FncApiClient.call_endpoint', side_effect=[known_error])
+    with pytest.raises(FncClientError) as e:
+        for response in client.continuous_polling(args=polling_args):
+            assert not response
+    assert e.value == known_error
+
+    mocker.patch('fnc.api.api_client.FncApiClient.call_endpoint', side_effect=[unexpected_error])
+    with pytest.raises(FncClientError) as e:
+        for response in client.continuous_polling(args=polling_args):
+            assert not response
+    assert e.value != known_error
+    assert e.value.error_type == ErrorType.GENERIC_ERROR
+    assert e.value.exception == unexpected_error

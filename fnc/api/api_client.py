@@ -467,19 +467,41 @@ class FncApiClient:
 #
 ########################################
 
-    def _get_search_window(self, start_date_str: str = None, polling_delay: int = None, checkpoint: str = None) -> tuple[datetime, datetime]:
-
-        end_date = datetime.now(tz=timezone.utc) - timedelta(minutes=polling_delay)
+    def _get_and_validate_search_window(
+        self, start_date_str: str = None,
+        polling_delay: int = None,
+        checkpoint: str = None
+    ) -> tuple[datetime, datetime]:
 
         # We try to get the start_date from the arguments or the checkpoint.
         # If none of them is provided we use the end_date as the first start_date
         start_date_str = checkpoint or start_date_str or "7 days"
+
+        # If the polling_delay is not provided, we use the default polling delay
+        polling_delay = polling_delay or POLLING_DEFAULT_DELAY
+
+        end_date = datetime.now(tz=timezone.utc) - timedelta(minutes=polling_delay)
+
         self.logger.debug(f"Getting search time window using start_date= {start_date_str} and polling_delay={polling_delay}")
 
         if start_date_str:
-            start_date = str_to_utc_datetime(
-                start_date_str, DEFAULT_DATE_FORMAT)
+            try:
+                start_date = str_to_utc_datetime(start_date_str, DEFAULT_DATE_FORMAT)
 
+            except ValueError as e:
+                error_message = f"Provided start date {start_date_str} cannot be parsed."
+                raise FncClientError(
+                    error_type=ErrorType.POLLING_TIME_WINDOW_ERROR,
+                    error_message=ErrorMessages.POLLING_TIME_WINDOW_ERROR,
+                    error_data={'error_message': error_message, 'error': e},
+                    exception=e
+                )
+
+        if end_date < start_date:
+            raise FncClientError(
+                error_type=ErrorType.POLLING_INVALID_TIME_WINDOW_ERROR,
+                error_message=ErrorMessages.POLLING_INVALID_TIME_WINDOW_ERROR
+            )
         return start_date, end_date
 
     def get_default_polling_args(self) -> dict:
@@ -531,23 +553,8 @@ class FncApiClient:
         checkpoint = context.get_checkpoint() if context else None
         start_date_str = args.get('start_date', '')
 
-        try:
-            start_date, end_date = self._get_search_window(
-                start_date_str=start_date_str, polling_delay=polling_delay, checkpoint=checkpoint)
-        except ValueError as e:
-            error_message = f"Provided start date {start_date_str} cannot be parsed."
-            raise FncClientError(
-                error_type=ErrorType.POLLING_TIME_WINDOW_ERROR,
-                error_message=ErrorMessages.POLLING_TIME_WINDOW_ERROR,
-                error_data={'error_message': error_message, 'error': e},
-                exception=e
-            )
-
-        if end_date < start_date:
-            raise FncClientError(
-                error_type=ErrorType.POLLING_INVALID_TIME_WINDOW_ERROR,
-                error_message=ErrorMessages.POLLING_INVALID_TIME_WINDOW_ERROR
-            )
+        start_date, end_date = self._get_and_validate_search_window(
+            start_date_str=start_date_str, polling_delay=polling_delay, checkpoint=checkpoint)
 
         polling_args['created_or_shared_start_date'] = datetime_to_utc_str(
             start_date, DEFAULT_DATE_FORMAT)
@@ -853,6 +860,8 @@ class FncApiClient:
                     raise e
                 else:
                     self.logger.info(f"{error_message} \n {str(e)}")
+                    yield response
+                    return
             except Exception as e:
                 self.logger.error("Detections polling failed unexpectedly.")
                 self.logger.error("\n".join(traceback.format_exception(e)))
