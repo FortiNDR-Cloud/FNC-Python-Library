@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
 
-from fnc.api.api_client import Context, DetectionApi, EntityApi, SensorApi
+from fnc.api.api_client import ApiContext, DetectionApi, EntityApi, SensorApi
 from fnc.api.endpoints import EndpointKey
 from fnc.errors import ErrorMessages, ErrorType, FncClientError
 from fnc.fnc_client import FncClient
@@ -1181,7 +1181,7 @@ def test_prepare_continuous_polling_valid_args_from_context(mocker):
         arg_key: arg_value,
         'offset': offset
     }
-    context = Context()
+    context = ApiContext()
 
     mock_validate_args = mocker.patch.object(client, '_validate_continuous_polling_args')
     context.update_polling_args(args=args_without_offset)
@@ -1217,7 +1217,7 @@ def test_prepare_continuous_polling_invalid_args_from_context(mocker):
         arg_key: arg_value
     }
 
-    context = Context()
+    context = ApiContext()
 
     fnc_error = FncClientError(
         error_type=ErrorType.GENERIC_ERROR,

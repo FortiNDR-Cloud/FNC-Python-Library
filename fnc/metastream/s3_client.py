@@ -8,7 +8,7 @@ import botocore.client
 import botocore.config
 
 
-class Context:
+class MetastreamContext:
     def __init__(self):
         self.file_downloads = 0
         self.api_calls = 0
@@ -23,7 +23,7 @@ class Context:
 
 class S3Client:
     def __init__(self, bucket: str, access_key: str, secret_key: str, user_agent_extra: str, client: botocore.client.BaseClient = None,
-                 context: Context = None):
+                 context: MetastreamContext = None):
         """
         S3Client provides a context manager for _S3Client.  Provides higher level methods for S3.
 
@@ -55,9 +55,9 @@ class S3Client:
 class _S3Client:
     S3_MAX_KEYS = 1000
 
-    def __init__(self, bucket: str, access_key: str, secret_key: str, user_agent_extra: str, client, context: Context):
+    def __init__(self, bucket: str, access_key: str, secret_key: str, user_agent_extra: str, client, context: MetastreamContext):
         self.bucket = bucket
-        self.context = context or Context()
+        self.context = context or MetastreamContext()
         if client is not None:
             self.client = client
         else:

@@ -8,7 +8,7 @@ from ..errors import ErrorMessages, ErrorType, FncClientError
 from ..global_variables import *
 from ..utils import *
 # from .auth_client import Auth
-from .s3_client import Context, S3Client
+from .s3_client import MetastreamContext, S3Client
 
 
 class FncMetastreamClient:
@@ -114,7 +114,7 @@ class FncMetastreamClient:
                 exception=e
             ) from e
 
-    def _get_prefixes(self, s3: S3Client, event_type: str, start_day: datetime = None, exact_day: bool = True, context: Context = None):
+    def _get_prefixes(self, s3: S3Client, event_type: str, start_day: datetime = None, exact_day: bool = True, context: MetastreamContext = None):
         if not s3:
             self.logger.warn("Prefixes for the S3 buckets cannot be retrieved due to: The client to connect to AWS S3 bucket was not provided.")
             return
@@ -171,7 +171,7 @@ class FncMetastreamClient:
             else:
                 yield events
 
-    def fetch_events_by_day(self, day: datetime, event_type: str, limit: int = 0, context: Context = None) -> Iterator[List[dict]]:
+    def fetch_events_by_day(self, day: datetime, event_type: str, limit: int = 0, context: MetastreamContext = None) -> Iterator[List[dict]]:
         """fetches events from metastream for an entire day.  See README.md for full details"""
         self.logger.info(f"Fetching {event_type} events for {day.date()}.")
 
@@ -201,7 +201,7 @@ class FncMetastreamClient:
                      start_date: datetime = datetime.now(
                          timezone.utc) - timedelta(minutes=5),
                      limit: int = 0,
-                     context: Context = None) -> Iterator[List[dict]]:
+                     context: MetastreamContext = None) -> Iterator[List[dict]]:
         """fetches events from metastream.  See README.md for full details"""
         checkpoint = datetime.now(tz=timezone.utc).replace(microsecond=0)
         if context:

@@ -1,7 +1,7 @@
-from .api_client import Context, FncApiClient
+from .api_client import ApiContext, FncApiClient
 from .endpoints import EndpointKey
 from .rest_clients import FncRestClient
 
 # from .utils import *
 
-__all__ = ['Context', 'FncApiClient', 'EndpointKey', 'FncRestClient']
+__all__ = ['ApiContext', 'FncApiClient', 'EndpointKey', 'FncRestClient']

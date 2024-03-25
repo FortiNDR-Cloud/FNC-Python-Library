@@ -8,7 +8,7 @@ from fnc import FncClient
 from fnc.global_variables import *
 # from fnc.metastream import fetch_events, fetch_events_by_day
 from fnc.metastream.metastream_client import *
-from fnc.metastream.s3_client import Context
+from fnc.metastream.s3_client import MetastreamContext
 from tests.utils import *
 
 
@@ -257,7 +257,7 @@ def test_get_prefixes_succeed(mocker):
 
     event_type = 'suricata'
     start_date = datetime(2024, 3, 18, random.randint(0, 23), random.randint(0, 59), random.randint(0, 59), random.randint(1, 999999))
-    context = Context()
+    context = MetastreamContext()
 
     with S3Client(client.bucket, client.access_key, client.secret_key, client.user_agent, context=context) as s3:
         spy_fetch_common_prefixes = mocker.spy(s3, 'fetch_common_prefixes')
@@ -370,7 +370,7 @@ def test_get_events_from_prefix_no_limit(mocker):
     start_date = datetime(2024, 3, 19, 0, 0, 0, 000000)
     end_date = datetime(2024, 3, 20, 23, 59, 59, 999999)
     prefix = 'v1/customer/cust-ac/s1/20240316/observation/'
-    context = Context()
+    context = MetastreamContext()
 
     with S3Client(client.bucket, client.access_key, client.secret_key, client.user_agent, context=context) as s3:
         spy_fetch_file_objects = mocker.spy(s3, 'fetch_file_objects')
@@ -446,7 +446,7 @@ def test_get_events_from_prefix_under_limit_partial_file(mocker):
     start_date = datetime(2024, 3, 19, 0, 0, 0, 000000)
     end_date = datetime(2024, 3, 20, 23, 59, 59, 999999)
     prefix = 'v1/customer/cust-ac/s1/20240316/observation/'
-    context = Context()
+    context = MetastreamContext()
 
     with S3Client(client.bucket, client.access_key, client.secret_key, client.user_agent, context=context) as s3:
         spy_fetch_file_objects = mocker.spy(s3, 'fetch_file_objects')
@@ -522,7 +522,7 @@ def test_get_events_from_prefix_under_limit_whole_file(mocker):
     start_date = datetime(2024, 3, 19, 0, 0, 0, 000000)
     end_date = datetime(2024, 3, 20, 23, 59, 59, 999999)
     prefix = 'v1/customer/cust-ac/s1/20240316/observation/'
-    context = Context()
+    context = MetastreamContext()
 
     with S3Client(client.bucket, client.access_key, client.secret_key, client.user_agent, context=context) as s3:
         spy_fetch_file_objects = mocker.spy(s3, 'fetch_file_objects')
@@ -568,7 +568,7 @@ def test_get_events_from_prefix_over_limit(mocker):
     start_date = datetime(2024, 3, 19, 0, 0, 0, 000000)
     end_date = datetime(2024, 3, 20, 23, 59, 59, 999999)
     prefix = 'v1/customer/cust-ac/s1/20240316/observation/'
-    context = Context()
+    context = MetastreamContext()
 
     with S3Client(client.bucket, client.access_key, client.secret_key, client.user_agent, context=context) as s3:
         spy_fetch_file_objects = mocker.spy(s3, 'fetch_file_objects')
@@ -600,7 +600,7 @@ def test_fetch_events_time_window_to_long():
 
     event_type = 'observation'
     start_date = datetime.now(tz=timezone.utc).replace(microsecond=0) - timedelta(hours=random.randint(24, 7*24))
-    context = Context()
+    context = MetastreamContext()
 
     total = 0
     with pytest.raises(FncClientError) as e:
@@ -624,7 +624,7 @@ def test_fetch_events_unsupported_event_type():
 
     event_type = get_random_string(10)
     start_date = datetime.now(tz=timezone.utc).replace(microsecond=0) - timedelta(hours=random.randint(0, 23))
-    context = Context()
+    context = MetastreamContext()
 
     total = 0
     with pytest.raises(FncClientError) as e:
@@ -648,7 +648,7 @@ def test_fetch_events_inverted_time_window():
 
     event_type = 'observation'
     start_date = datetime.now(tz=timezone.utc).replace(microsecond=0) + timedelta(seconds=1)
-    context = Context()
+    context = MetastreamContext()
 
     total = 0
     with pytest.raises(FncClientError) as e:
@@ -693,7 +693,7 @@ def test_fetch_events(mocker):
     # start_date = datetime(2024, 3, 18, random.randint(0, 23), random.randint(
     #     0, 59), random.randint(0, 59), random.randint(1, 999999), timezone.utc)
     start_date = datetime.now(tz=timezone.utc).replace(microsecond=0) - timedelta(hours=6)
-    context = Context()
+    context = MetastreamContext()
 
     # We only check the limit is passed to the _get_events_from_prefix method
     # This method is the one that guaranty that no more than limit events are returned
@@ -739,7 +739,7 @@ def test_fetch_events_by_day_to_late():
 
     event_type = 'observation'
     start_date = datetime.now(tz=timezone.utc).replace(microsecond=0) - timedelta(days=random.randint(7, 100))
-    context = Context()
+    context = MetastreamContext()
 
     total = 0
     with pytest.raises(FncClientError) as e:
@@ -763,7 +763,7 @@ def test_fetch_events_by_day_unsupported_event_type():
 
     event_type = get_random_string(10)
     start_date = datetime.now(tz=timezone.utc).replace(microsecond=0) - timedelta(hours=random.randint(0, 23))
-    context = Context()
+    context = MetastreamContext()
 
     total = 0
     with pytest.raises(FncClientError) as e:
@@ -787,7 +787,7 @@ def test_fetch_events_by_day_to_soon():
 
     event_type = 'observation'
     start_date = datetime.now(tz=timezone.utc).replace(microsecond=0) + timedelta(seconds=1)
-    context = Context()
+    context = MetastreamContext()
 
     total = 0
     with pytest.raises(FncClientError) as e:
@@ -831,7 +831,7 @@ def test_fetch_events_by_day(mocker):
     # start_date = datetime(2024, 3, 18, random.randint(0, 23), random.randint(
     #     0, 59), random.randint(0, 59), random.randint(1, 999999), timezone.utc)
     start_date = datetime.now(tz=timezone.utc).replace(microsecond=0) - timedelta(hours=random.randint(24, 7*24))
-    context = Context()
+    context = MetastreamContext()
 
     # We only check the limit is passed to the _get_events_from_prefix method
     # This method is the one that guaranty that no more than limit events are returned

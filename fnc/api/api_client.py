@@ -13,7 +13,7 @@ from .endpoints import *
 from .rest_clients import BasicRestClient, FncRestClient
 
 
-class Context:
+class ApiContext:
     _checkpoint: str
     _polling_args: dict
 
@@ -523,7 +523,7 @@ class FncApiClient:
             'offset': 0
         }
 
-    def _prepare_continuous_polling(self, context: Context = None, args: dict = None) -> dict:
+    def _prepare_continuous_polling(self, context: ApiContext = None, args: dict = None) -> dict:
         self.logger.info(
             "Preparing arguments for continuously polling Detections.")
 
@@ -812,7 +812,7 @@ class FncApiClient:
 
         return response
 
-    def continuous_polling(self, context: Context = None, args: dict = None) -> Iterator[List[dict]]:
+    def continuous_polling(self, context: ApiContext = None, args: dict = None) -> Iterator[List[dict]]:
         self.logger.info("Starting continuous polling execution.")
         args = args or {}
         polling_args = {}
@@ -822,7 +822,7 @@ class FncApiClient:
                 "No context has been provided. The provided start date ( 7 days ago by default) will be used.")
             self.logger.info(
                 "The context is required to keep track of the latest checkpoint to avoid missing or duplicated detections.")
-        context = context or Context()
+        context = context or ApiContext()
 
         response = {}
 
