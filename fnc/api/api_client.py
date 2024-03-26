@@ -133,8 +133,10 @@ class FncApiClient:
             if self.domain.startswith('-uat'):
                 # To allow use of uat environment
                 url = f"{self.protocol}://{api_name}{self.domain}/{endpoint}"
-            else:
+            elif self.domain == CLIENT_DEFAULT_DOMAIN:
                 url = f"{self.protocol}://{api_name}.{self.domain}/{endpoint}"
+            else:
+                url = f"{self.protocol}://{api_name}-api.{self.domain}/{endpoint}"
 
             full_url = ""
 
