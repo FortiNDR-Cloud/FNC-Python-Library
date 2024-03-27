@@ -436,7 +436,7 @@ class GetSensors(Endpoint):
 
     def get_query_args(self) -> dict:
         return {
-            'account_id':   ArgumentDefinition(required=False, multiple=False),
+            'account_uuid':   ArgumentDefinition(required=False, multiple=False),
             'account_code': ArgumentDefinition(required=False, multiple=False),
             'sensor_id':    ArgumentDefinition(required=False, multiple=False),
             'include':      ArgumentDefinition(required=False, multiple=True),
@@ -485,7 +485,7 @@ class GetDevices(Endpoint):
 
     def get_query_args(self) -> dict:
         return {
-            'account_id':        ArgumentDefinition(required=False, multiple=False),
+            'account_uuid':        ArgumentDefinition(required=False, multiple=False),
             'start_date':        ArgumentDefinition(required=False, multiple=False),
             'end_date':          ArgumentDefinition(required=False, multiple=False),
             'cidr':              ArgumentDefinition(required=False, multiple=False),
@@ -537,7 +537,7 @@ class GetTasks(Endpoint):
 
     def get_query_args(self) -> dict:
         return {
-            'account_id':   ArgumentDefinition(required=False, multiple=False),
+            'account_uuid':   ArgumentDefinition(required=False, multiple=False),
             'account_code': ArgumentDefinition(required=False, multiple=False),
             'sensor_id':    ArgumentDefinition(required=False, multiple=False),
             'include':      ArgumentDefinition(required=False, multiple=True),
@@ -685,7 +685,7 @@ class GetEntitySummary(Endpoint):
 
     def get_query_args(self) -> dict:
         return {
-            'account_id':       ArgumentDefinition(required=False, multiple=True),
+            'account_uuid':       ArgumentDefinition(required=False, multiple=True),
             'entity_type':      ArgumentDefinition(required=False, multiple=False, allowed=['domain', 'ip']),
         }
 
@@ -712,7 +712,7 @@ class GetEntityPdns(Endpoint):
 
     def get_query_args(self) -> dict:
         return {
-            'account_id':       ArgumentDefinition(required=False, multiple=True),
+            'account_uuid':       ArgumentDefinition(required=False, multiple=True),
             'record_type':      ArgumentDefinition(required=False, multiple=True),
             'source':           ArgumentDefinition(required=False, multiple=True),
             'resolve_external': ArgumentDefinition(required=False, multiple=False),
@@ -773,7 +773,7 @@ class GetEntityFile(Endpoint):
 
     def get_query_args(self) -> dict:
         return {
-            'account_id':       ArgumentDefinition(required=False, multiple=True),
+            'account_uuid':       ArgumentDefinition(required=False, multiple=True),
         }
 
     def get_response_fields(self) -> list[str]:
@@ -798,7 +798,7 @@ class GetDetections(Endpoint):
 
     def get_query_args(self) -> dict:
         return {
-            'account_id':                   ArgumentDefinition(required=False, multiple=False),
+            'account_uuid':                   ArgumentDefinition(required=False, multiple=False),
             'rule_uuid':                    ArgumentDefinition(required=False, multiple=True),
             'status':                       ArgumentDefinition(required=False, multiple=True, allowed=['active', 'resolved']),
             'device_ip':                    ArgumentDefinition(required=False, multiple=False),
@@ -904,7 +904,7 @@ class GetRules(Endpoint):
 
     def get_query_args(self) -> dict:
         return {
-            'account_id':          ArgumentDefinition(required=False, multiple=False),
+            'account_uuid':          ArgumentDefinition(required=False, multiple=False),
             'rule_account_uuid':   ArgumentDefinition(required=False, multiple=False),
             'search':              ArgumentDefinition(required=False, multiple=False, allowed=['name', 'category', 'description']),
             'has_detections':      ArgumentDefinition(required=False, multiple=False),
