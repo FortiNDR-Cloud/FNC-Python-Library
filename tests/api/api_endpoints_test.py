@@ -51,14 +51,14 @@ def test_evaluate():
         'url_arg_2': get_random_string(),
 
         'body_arg_required': get_random_string(),
-        'body_arg_multiple': f"{get_random_string()},{get_random_string()}",
+        'body_arg_multiple': f"{get_random_string()}, {get_random_string()}",
         'body_arg_allowed': f"expected_{random.randint(1, 3)}",
-        'body_arg_multiple_and_allowed': f"expected_{random.randint(1, 3)},expected_{random.randint(1, 3)}",
+        'body_arg_multiple_and_allowed': f" expected_{random.randint(1, 3)},expected_{random.randint(1, 3)}",
 
         'query_arg_required': get_random_string(),
-        'query_arg_multiple': f"{get_random_string()},{get_random_string()}",
+        'query_arg_multiple': f"{get_random_string()},{get_random_string()} ",
         'query_arg_allowed': f"expected_{random.randint(1, 3)}",
-        'query_arg_multiple_and_allowed': f"expected_{random.randint(1, 3)},expected_{random.randint(1, 3)}",
+        'query_arg_multiple_and_allowed': f"expected_{random.randint(1, 3)} ,expected_{random.randint(1, 3)}",
     }
 
     expected_success_result = {
@@ -68,15 +68,15 @@ def test_evaluate():
         },
         'body_args': {
             'body_arg_required': args['body_arg_required'],
-            'body_arg_multiple': args['body_arg_multiple'].split(','),
+            'body_arg_multiple': list(v.strip() for v in args['body_arg_multiple'].split(',')),
             'body_arg_allowed': [args['body_arg_allowed']],
-            'body_arg_multiple_and_allowed': args['body_arg_multiple_and_allowed'].split(','),
+            'body_arg_multiple_and_allowed': list(v.strip() for v in args['body_arg_multiple_and_allowed'].split(',')),
         },
         'query_args': {
             'query_arg_required': [args['query_arg_required']],
-            'query_arg_multiple': args['query_arg_multiple'].split(','),
+            'query_arg_multiple': list(v.strip() for v in args['query_arg_multiple'].split(',')),
             'query_arg_allowed': [args['query_arg_allowed']],
-            'query_arg_multiple_and_allowed': args['query_arg_multiple_and_allowed'].split(','),
+            'query_arg_multiple_and_allowed': list(v.strip() for v in args['query_arg_multiple_and_allowed'].split(',')),
         },
         'control_args': {
             'method': ['METHOD']

@@ -188,17 +188,18 @@ class Endpoint:
         res = {}
         is_list = isinstance(to_evaluate, list)
         for arg in to_evaluate:
-            v = args.pop(arg, None)
-            if v is not None:
+            value = args.pop(arg, None)
+            if value is not None:
                 if is_list:
-                    res[arg] = v
+                    res[arg] = value
                 else:
                     arg_def: ArgumentDefinition = to_evaluate[arg]
 
                     # if argument allow multiple we need to provide a list of values instead of a comma separated str
-                    if arg_def.allow_multiple() and isinstance(v, str):
-                        v = v.split(',')
-                    res[arg] = v
+                    if arg_def.allow_multiple() and isinstance(value, str):
+                        value = value.split(',')
+                        value = list(v.strip() for v in value)
+                    res[arg] = value
 
         return res
 
