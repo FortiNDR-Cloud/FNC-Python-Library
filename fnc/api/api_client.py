@@ -666,11 +666,12 @@ class FncApiClient:
             try:
                 pdns_data = self.call_endpoint(
                     endpoint=EndpointKey.GET_ENTITY_PDNS, args={'entity': entity})
+                pdns: list = pdns_data.get('pdns_data', [])
                 if filter_training:
-                    pdns_data = filter(
-                        lambda v: v['account_uuid'] != POLLING_TRAINING_ACCOUNT_ID, pdns_data)
+                    pdns = list(filter(
+                        lambda v: v.get('account_uuid', '') != POLLING_TRAINING_ACCOUNT_ID, pdns))
 
-                result.update({"PDNS": pdns_data})
+                result.update({"PDNS": pdns})
 
                 self.logger.debug(
                     "Entity's pdns information successfully retrieved.")
@@ -684,11 +685,12 @@ class FncApiClient:
             try:
                 dhcp_data = self.call_endpoint(
                     endpoint=EndpointKey.GET_ENTITY_DHCP, args={'entity': entity})
+                dhcp: list = dhcp_data.get('dhcp', [])
                 if filter_training:
-                    dhcp_data = filter(
-                        lambda v: v['customer_id'] != POLLING_TRAINING_CUSTOMER_ID, dhcp_data)
+                    dhcp = list(filter(
+                        lambda v: v.get('customer_id', '') != POLLING_TRAINING_CUSTOMER_ID, dhcp))
 
-                result.update({"dhcp": dhcp_data})
+                result.update({"dhcp": dhcp})
 
                 self.logger.debug(
                     "Entity's DHCP information successfully retrieved.")

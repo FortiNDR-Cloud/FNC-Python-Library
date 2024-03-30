@@ -75,11 +75,13 @@ def test_get_url_failure_missing_api_name(mocker):
 def test_get_url_succeed(mocker):
     api_token = 'fake_api_token'
     domain = 'fake_domain'
+    default_domain = CLIENT_DEFAULT_DOMAIN
     agent = 'fake_agent'
 
     api = MockApi()
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
-    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=None)
+    client_with_default = FncClient.get_api_client(name=agent, api_token=api_token, domain=default_domain, rest_client=None)
+    client_with_fake = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain, rest_client=None)
     endpoints = api.get_supported_endpoints()
 
     url_arg_1: str = 'fake1'
@@ -94,9 +96,12 @@ def test_get_url_succeed(mocker):
         # Assert it succeed if all the arguments are passed
 
         endpoint_url = endpoint_url.format(**url_args)
-        expected_url = f'https://{api._api_name}.{domain}/{endpoint_url}'
-        assert client.get_url(e=endpoint, api=api,
-                              url_args=url_args) == expected_url
+        expected_default_url = f'https://{api._api_name}.{default_domain}/{endpoint_url}'
+        expected_url = f'https://{api._api_name}-api.{domain}/{endpoint_url}'
+        assert client_with_default.get_url(e=endpoint, api=api,
+                                           url_args=url_args) == expected_default_url
+        assert client_with_fake.get_url(e=endpoint, api=api,
+                                        url_args=url_args) == expected_url
 
 
 def test_get_endpoint_if_supported_failure_no_endpoint(mocker):
