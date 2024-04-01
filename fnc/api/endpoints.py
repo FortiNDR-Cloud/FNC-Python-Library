@@ -733,7 +733,7 @@ class GetEntityDhcp(Endpoint):
     default_values: dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
-        return EndpointKey.GET_ENTITY_PDNS
+        return EndpointKey.GET_ENTITY_DHCP
 
     def get_control_args(self) -> dict:
         return {
