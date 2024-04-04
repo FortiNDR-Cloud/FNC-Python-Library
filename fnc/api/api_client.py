@@ -490,8 +490,7 @@ class FncApiClient:
 
         if start_date_str:
             try:
-                if start_date_str:
-                    start_date = str_to_utc_datetime(start_date_str, DEFAULT_DATE_FORMAT)
+                start_date = str_to_utc_datetime(start_date_str, DEFAULT_DATE_FORMAT)
                 if end_date_str:
                     end_date = str_to_utc_datetime(end_date_str, DEFAULT_DATE_FORMAT)
 
