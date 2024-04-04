@@ -471,24 +471,29 @@ class FncApiClient:
 
     def _get_and_validate_search_window(
         self, start_date_str: str = None,
+        end_date_str: str = None,
         polling_delay: int = None,
         checkpoint: str = None
     ) -> tuple[datetime, datetime]:
 
         # We try to get the start_date from the arguments or the checkpoint.
-        # If none of them is provided we use the end_date as the first start_date
-        start_date_str = checkpoint or start_date_str or "7 days"
+        # If none of them is provided we use the beginning of the day as the first start_date
+        start_date_str = checkpoint or start_date_str or ""
 
         # If the polling_delay is not provided, we use the default polling delay
         polling_delay = polling_delay or POLLING_DEFAULT_DELAY
 
-        end_date = datetime.now(tz=timezone.utc) - timedelta(minutes=polling_delay)
-
-        self.logger.debug(f"Getting search time window using start_date= {start_date_str} and polling_delay={polling_delay}")
+        now = datetime.now(tz=timezone.utc)
+        end_date = now - timedelta(minutes=polling_delay)
+        start_date = now.replace(hour=0, minute=0, second=0,
+                                 microsecond=0, tzinfo=timezone.utc)
 
         if start_date_str:
             try:
-                start_date = str_to_utc_datetime(start_date_str, DEFAULT_DATE_FORMAT)
+                if start_date_str:
+                    start_date = str_to_utc_datetime(start_date_str, DEFAULT_DATE_FORMAT)
+                if end_date_str:
+                    end_date = str_to_utc_datetime(end_date_str, DEFAULT_DATE_FORMAT)
 
             except ValueError as e:
                 error_message = f"Provided start date {start_date_str} cannot be parsed."
@@ -498,6 +503,13 @@ class FncApiClient:
                     error_data={'error_message': error_message, 'error': e},
                     exception=e
                 )
+
+        log_start_date = datetime_to_utc_str(start_date)
+        log_end_date = datetime_to_utc_str(end_date)
+        if not end_date_str:
+            self.logger.debug(f"Getting search time window using start_date= {log_start_date} and polling_delay={polling_delay}")
+        else:
+            self.logger.debug(f"Using a fix search time window (start_date= {log_start_date} and end_date={log_end_date}")
 
         if end_date < start_date:
             raise FncClientError(
@@ -554,9 +566,10 @@ class FncApiClient:
         polling_delay = args.get('polling_delay', POLLING_DEFAULT_DELAY)
         checkpoint = context.get_checkpoint() if context else None
         start_date_str = args.get('start_date', '')
+        end_date_str = args.get('end_date', '')
 
         start_date, end_date = self._get_and_validate_search_window(
-            start_date_str=start_date_str, polling_delay=polling_delay, checkpoint=checkpoint)
+            start_date_str=start_date_str, end_date_str=end_date_str, polling_delay=polling_delay, checkpoint=checkpoint)
 
         polling_args['created_or_shared_start_date'] = datetime_to_utc_str(
             start_date, DEFAULT_DATE_FORMAT)
