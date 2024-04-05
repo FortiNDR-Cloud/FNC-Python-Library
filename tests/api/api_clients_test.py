@@ -897,7 +897,8 @@ def test_and_validate_get_search_window_succeed(mocker):
     default_delay = 10
     delay = random.randint(11, 50)
 
-    default_start_date = now - timedelta(days=7)
+    default_start_date = now.replace(hour=0, minute=0, second=0,
+                                     microsecond=0, tzinfo=timezone.utc)
 
     start_date = now - timedelta(minutes=random.randint(delay+1, 100))
     start_date_str = datetime_to_utc_str(start_date)
@@ -929,6 +930,28 @@ def test_and_validate_get_search_window_succeed(mocker):
 
     assert received_start_date - default_start_date < timedelta(seconds=1)
     assert received_end_date - default_end_date < timedelta(seconds=1)
+
+    r_d = random.randint(1, 7)
+    r_h = random.randint(1, 24)
+    r_m = random.randint(1, 60)
+    r_s = random.randint(1, 60)
+
+    random_start_date = now - timedelta(days=r_d, hours=r_h, minutes=r_m, seconds=r_s)
+
+    r_d = random.randint(0, r_d-1)
+    r_h = random.randint(0, r_h-1)
+    r_m = random.randint(0, r_m-1)
+    r_s = random.randint(0, r_s-1)
+
+    random_end_date = now - timedelta(days=r_d, hours=r_h, minutes=r_m, seconds=r_s)
+
+    start_date_str = datetime_to_utc_str(random_start_date)
+    end_date_str = datetime_to_utc_str(random_end_date)
+
+    received_start_date, received_end_date = client._get_and_validate_search_window(start_date_str=start_date_str, end_date_str=end_date_str)
+
+    assert received_start_date == random_start_date
+    assert received_end_date == random_end_date
 
 
 def test_and_validate_get_search_window_failure_inverted(mocker):
