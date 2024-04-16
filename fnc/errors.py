@@ -24,7 +24,8 @@ class ErrorMessages:
     POLLING_VALIDATION_ERROR = "Some of the arguments provided for the continuous polling are invalid:\n [{failed}]"
     POLLING_TIME_WINDOW_ERROR = "The search time window cannot be determined due to {error_message}.\n [{error}]."
     POLLING_INVALID_TIME_WINDOW_ERROR = "The end_date is sooner than the start_date."
-
+    POLLING_LIMIT_OVERPASSED = "The specified limit ({limit}) is being overpassed [total_count= {count}]."
+    POLLING_MISSING_CONTEXT = "The ApiContext is Missing. Ensure that the appropriate context for history or continuous polling is passed."
     # Request related error's messages
 
     REQUEST_URL_NOT_PROVIDED = "The REST request cannot be performed because no url was provided."
@@ -54,7 +55,8 @@ class ErrorType(Enum):
     POLLING_VALIDATION_ERROR = auto()
     POLLING_TIME_WINDOW_ERROR = auto()
     POLLING_INVALID_TIME_WINDOW_ERROR = auto()
-
+    POLLING_LIMIT_OVERPASSED = auto()
+    POLLING_MISSING_CONTEXT = auto()
     # Endpoint related errors
 
     ENDPOINT_ERROR = auto()

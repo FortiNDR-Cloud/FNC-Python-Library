@@ -15,17 +15,25 @@ from .rest_clients import BasicRestClient, FncRestClient
 
 class ApiContext:
     _checkpoint: str
+    _history: dict
     _polling_args: dict
 
     def __init__(self):
         self._polling_args = {}
         self._checkpoint = ''
+        self._history = {}
 
     def update_polling_args(self, args: dict):
         self._polling_args = args or None
 
     def get_polling_args(self):
         return self._polling_args
+
+    def update_history(self, _history: dict):
+        self._history = _history or None
+
+    def get_history(self):
+        return self._history
 
     def update_checkpoint(self, checkpoint: str):
         self._checkpoint = checkpoint
@@ -34,7 +42,7 @@ class ApiContext:
         return self._checkpoint
 
     def clear_args(self):
-        self.args = {}
+        self._polling_args = {}
 
 
 class FncApiClient:
@@ -492,7 +500,9 @@ class FncApiClient:
             try:
                 start_date = str_to_utc_datetime(start_date_str, DEFAULT_DATE_FORMAT)
                 if end_date_str:
-                    end_date = str_to_utc_datetime(end_date_str, DEFAULT_DATE_FORMAT)
+                    ed = str_to_utc_datetime(end_date_str, DEFAULT_DATE_FORMAT)
+                    if ed < end_date:
+                        end_date = ed
 
             except ValueError as e:
                 error_message = f"Provided start date {start_date_str} cannot be parsed."
@@ -536,7 +546,7 @@ class FncApiClient:
             'offset': 0
         }
 
-    def _prepare_continuous_polling(self, context: ApiContext = None, args: dict = None) -> dict:
+    def _prepare_continuous_polling(self, context: ApiContext = None, args: dict = None, limit: int = 0) -> dict:
         self.logger.info(
             "Preparing arguments for continuously polling Detections.")
 
@@ -561,6 +571,10 @@ class FncApiClient:
 
         # Getting arguments for the first call
         polling_args: dict = self.get_default_polling_args()
+
+        if limit:
+            lmt = limit if limit < POLLING_MAX_DETECTIONS else POLLING_MAX_DETECTIONS
+            polling_args['limit'] = lmt
 
         polling_delay = args.get('polling_delay', POLLING_DEFAULT_DELAY)
         checkpoint = context.get_checkpoint() if context else None
@@ -713,7 +727,7 @@ class FncApiClient:
 
         return result
 
-    def _process_response(self, response: dict, args: dict = None):
+    def _process_response(self, response: dict, entities_info: dict = {}, args: dict = None):
         # Getting instructions from the arguments
         include_description = args.get('include_description', False)
         include_signature = args.get('include_signature', False)
@@ -725,6 +739,9 @@ class FncApiClient:
         detection_events = {}
 
         dCount = len(response['detections']) if "detections" in response else 0
+        if dCount == 0:
+            return
+
         self.logger.info(f"Processing {dCount} retrieved detections.")
 
         # create a dictionary with the rules to find detection's rule easily
@@ -753,15 +770,21 @@ class FncApiClient:
         if fetch_dhcp or fetch_pdns:
             self.logger.debug(
                 " Enriching detection with additional entity's information.")
+
             for detection in response['detections']:
-                # Add the PDNS and DHCP information if requested
-                entity_info: dict = self._get_entity_information(
-                    entity=detection['device_ip'],
-                    fetch_dhcp=fetch_dhcp,
-                    fetch_pdns=fetch_pdns,
-                    filter_training=filter_training
-                )
-                detection.update(entity_info)
+                entity = detection['device_ip']
+                if not entities_info.get(entity, {}):
+                    # Add the PDNS and DHCP information if requested
+                    entities_info[entity] = self._get_entity_information(
+                        entity=entity,
+                        fetch_dhcp=fetch_dhcp,
+                        fetch_pdns=fetch_pdns,
+                        filter_training=filter_training
+                    )
+                else:
+                    self.logger.debug(f"Scaping {entity} since it was already requested.")
+
+                detection.update(entities_info.get(entity))
 
             self.logger.info(
                 "Entity's information successfully added to the detections.")
@@ -785,8 +808,6 @@ class FncApiClient:
             self.logger.info(f"Associated events for ({total - failed} out of {total}) detections were successfully added to the response.")
 
         response['events'] = detection_events
-
-        return response
 
     def _get_detection_events(self, detection_id: str) -> list:
         detection_events = []
@@ -828,9 +849,23 @@ class FncApiClient:
 
         return response
 
+    def _check_if_limit_is_overpassed(self, polling_args: dict, limit):
+        polling_args = polling_args.copy()
+        polling_args['limit'] = 1
+
+        self.logger.info("Verifying if limit will be overpassed.")
+
+        response = self._get_detections(polling_args)
+        if response['total_count'] > limit:
+            raise FncClientError(
+                error_type=ErrorType.POLLING_LIMIT_OVERPASSED,
+                error_message=ErrorMessages.POLLING_LIMIT_OVERPASSED,
+                error_data={'limit': limit, 'count': response['total_count']}
+            )
+
     def continuous_polling(self, context: ApiContext = None, args: dict = None) -> Iterator[List[dict]]:
         self.logger.info("Starting continuous polling execution.")
-        args = args or {}
+        args = args.copy() or {}
         polling_args = {}
 
         if not context:
@@ -841,6 +876,11 @@ class FncApiClient:
         context = context or ApiContext()
 
         response = {}
+        entities_info = {}
+
+        limit = args.get('limit', 0)
+        is_limited = limit > 0
+        limit_checked = False
 
         while 'detections' not in response or response['detections']:
             try:
@@ -853,26 +893,32 @@ class FncApiClient:
                 context.update_checkpoint(
                     polling_args['created_or_shared_end_date'])
 
+                if is_limited and not limit_checked:
+                    limit_checked = True
+                    self._check_if_limit_is_overpassed(polling_args=polling_args, limit=limit)
+
                 # Request detections
                 response = self._get_detections(polling_args.copy())
 
-                # Process the response enriching it if requested
-                self._process_response(response=response, args=args)
+                if len(response['detections']) > 0:
+                    # Process the response enriching it if requested
+                    self._process_response(response=response, entities_info=entities_info, args=args)
 
-                offset = polling_args.get('offset', 0)
-                polling_args['offset'] = offset + POLLING_MAX_DETECTIONS
-                context.update_polling_args(args=polling_args)
-
+                    offset = polling_args.get('offset', 0)
+                    polling_args['offset'] = offset + len(response['detections'])
+                    context.update_polling_args(args=polling_args)
+                else:
+                    self.get_logger().info('No detection retrieved.')
                 yield response
 
             except FncClientError as e:
                 self.logger.error(
                     "Detections polling failed. " +
-                    f"If a context was provided, the arguments used for the latest call will be in the Context's args field.\n {polling_args}")
+                    "If a context was provided, the arguments used for the latest call will be in the Context's polling_args field.")
                 error_message = 'Detections cannot be pulled due to:'
                 if e.error_type != ErrorType.POLLING_INVALID_TIME_WINDOW_ERROR:
                     self.logger.error(error_message)
-                    self.logger.error("\n".join(traceback.format_exception(e)))
+                    # self.logger.error("\n".join(traceback.format_exception(e)))
                     raise e
                 else:
                     self.logger.info(f"{error_message} \n {str(e)}")
@@ -890,3 +936,164 @@ class FncApiClient:
 
         self.logger.info(
             "Continuous polling execution successfully completed.")
+
+    def get_splitted_context(self, args: dict = None) -> tuple[ApiContext, ApiContext]:
+        polling_delay = args.get('polling_delay', POLLING_DEFAULT_DELAY)
+        start_date_str = args.get('start_date', '')
+        end_date_str = args.get('end_date', '')
+
+        self.logger.info("Splitting the context to extract the history.")
+        self.logger.debug(f"Start date= {start_date_str}, End date= {end_date_str}")
+
+        ed = None
+        if end_date_str:
+            ed = str_to_utc_datetime(end_date_str)
+
+        start_date, end_date = self._get_and_validate_search_window(
+            start_date_str=start_date_str, end_date_str=end_date_str, polling_delay=polling_delay)
+
+        checkpoint = ''
+        if not ed or ed > end_date:
+            checkpoint = checkpoint or datetime_to_utc_str(
+                end_date,
+                DEFAULT_DATE_FORMAT
+            )
+        else:
+            checkpoint = checkpoint or datetime_to_utc_str(
+                datetime.now(tz=timezone.utc),
+                DEFAULT_DATE_FORMAT
+            )
+
+        history = {
+            'start_date': datetime_to_utc_str(start_date, DEFAULT_DATE_FORMAT),
+            'end_date': datetime_to_utc_str(end_date, DEFAULT_DATE_FORMAT),
+        }
+
+        self.logger.info("History set to")
+        self.logger.debug(f"Start date= {history.get('start_date')}")
+        self.logger.debug(f"End date= {history.get('end_date')}")
+
+        history_context = ApiContext()
+        history_context.update_history(history)
+
+        context = ApiContext()
+        context.update_checkpoint(checkpoint=checkpoint)
+        self.logger.info(f"Start checkpoint set to: {checkpoint}")
+
+        return history_context, context
+
+    def poll_history(self, context: ApiContext = None, args: dict = None, interval: timedelta = timedelta(days=1)) -> Iterator[List[dict]]:
+        # Raise Exception if No Context with History is passed
+        if not context or not context.get_history():
+            self.logger.error("A splitted context with the history time window is required to pull history")
+            raise FncClientError(
+                error_type=ErrorType.POLLING_MISSING_CONTEXT,
+                error_message=ErrorMessages.POLLING_MISSING_CONTEXT
+            )
+
+        # Copy the Arguments dictionary and update the history time window
+        args = args.copy()
+        history = context.get_history()
+
+        start_date_str = context.get_checkpoint() or history.get('start_date', None)
+        end_date_str = history.get('end_date', None)
+
+        start_date = str_to_utc_datetime(start_date_str)
+        end_date = str_to_utc_datetime(end_date_str)
+
+        # If the there is no history tu pull we return
+        if not start_date or not end_date or end_date <= start_date:
+
+            self.get_logger().warn(
+                f"Polling history was called with invalid data (start_date= {start_date_str} and end_date= {end_date_str}). The call will be ignored.")
+            return
+
+        self.get_logger().info(f"Polling history day by day (from {start_date_str} to {end_date_str})")
+
+        args['start_date'] = start_date_str
+        args['end_date'] = end_date_str
+
+        # Required to check if enrichment is needed
+        fetch_pdns = args.get('include_pdns', False)
+        fetch_dhcp = args.get('include_dhcp', False)
+        include_events = args.get('include_events', False)
+        limit = 0
+
+        # Start delta as the lesser of 1 day and the entire history time window
+        delta = interval
+        if delta > end_date - start_date:
+            delta = end_date - start_date
+
+        # If delta is less than 1 hour we do not care about the limit and pull the entire interval
+        # otherwise get the limit and the end date for the first piece to pull
+        need_enrichment = fetch_pdns or fetch_dhcp or include_events
+        if delta > timedelta(hours=1) and need_enrichment:
+            previous_checkpoint = start_date_str
+
+            limit = args.get('limit', 0)
+            ed = start_date + delta
+            self.get_logger().debug(f"Enrichment is required so that the limit {limit} will be applied to every iteration.")
+        else:
+            self.get_logger().debug("Enrichment is not required or the interval is to short. The limit will be ignored.")
+            delta = None
+            ed = end_date
+            args.pop('limit')
+
+        # We pull detections one day at a time until we the limit is reached
+        # If the limit is overpassed in the first piece of 1 day, we start
+        # dividing the delta by 2 until we do not overpass the limit or delta
+        # is less than 1 hour. At this moment, we pull everything regardless the
+        # limit.
+
+        d_count = 0
+        is_done = False
+        while not is_done:
+            try:
+                while not is_done and ed <= end_date:
+                    # If we haven't yet pulled the entire history, We update the
+                    # end_date to pull the next piece
+                    context.clear_args()
+                    args['end_date'] = datetime_to_utc_str(ed)
+
+                    self.get_logger().info(f"Polling history from {context.get_checkpoint()} to {args['end_date']})")
+
+                    for detections in self.continuous_polling(context=context, args=args):
+                        # we pull detections for the current piece and update the limit appropriately
+
+                        d_count += len(detections.get('detections', []))
+                        yield detections
+
+                    previous_checkpoint = context.get_checkpoint()
+                    delta = interval
+
+                    # If there remaining piece is less than delta we pull the entire remaining interval
+                    if ed == end_date:
+                        self.get_logger().info("Historical data has been fully retrieved")
+                        is_done = True
+                    elif end_date - ed <= delta:
+                        ed = end_date
+                    else:
+                        ed = ed + delta
+
+                is_done = True
+            except FncClientError as e:
+                context.update_checkpoint(previous_checkpoint)
+                if e.error_type == ErrorType.POLLING_LIMIT_OVERPASSED:
+                    if delta <= timedelta(hours=1):
+                        # If the interval is less than 1h we do not split it and stop iteration
+                        self.get_logger().info(
+                            f"The limit of {limit} was overpassed but the interval is to short to split. The iteration will be ended.")
+                        is_done = True
+                    else:
+                        self.get_logger().info(f"The limit of {limit} was overpassed. Splitting the interval in half.")
+
+                        # If we are not done yet and the limit was overpassed we divide the delta in half
+                        delta = delta / 2
+                        if delta < timedelta(hours=1):
+                            # if delta becomes less than 1 hour, we fix it to 1 hour
+                            delta = timedelta(hours=1)
+                        sd = str_to_utc_datetime(context.get_checkpoint())
+                        ed = sd + delta
+                else:
+                    raise e
+        self.get_logger().info("Iteration completed for the history polling.")
