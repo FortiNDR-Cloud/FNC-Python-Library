@@ -917,7 +917,7 @@ class FncApiClient:
                     "If a context was provided, the arguments used for the latest call will be in the Context's polling_args field.")
                 error_message = 'Detections cannot be pulled due to:'
                 if e.error_type != ErrorType.POLLING_INVALID_TIME_WINDOW_ERROR:
-                    self.logger.error(error_message)
+                    self.logger.error(f"{error_message} \n {str(e)}")
                     # self.logger.error("\n".join(traceback.format_exception(e)))
                     raise e
                 else:
@@ -1056,14 +1056,20 @@ class FncApiClient:
                     args['end_date'] = datetime_to_utc_str(ed)
 
                     self.get_logger().info(f"Polling history from {context.get_checkpoint()} to {args['end_date']})")
-
+                    count = 0
                     for detections in self.continuous_polling(context=context, args=args):
                         # we pull detections for the current piece and update the limit appropriately
 
-                        d_count += len(detections.get('detections', []))
+                        count += len(detections.get('detections', []))
                         yield detections
+                    d_count += count
+                    limit = args.get('limit', 0)
+                    if limit:
+                        args['limit'] = limit - count
 
                     previous_checkpoint = context.get_checkpoint()
+
+                    is_done = delta != interval
                     delta = interval
 
                     # If there remaining piece is less than delta we pull the entire remaining interval
@@ -1084,7 +1090,7 @@ class FncApiClient:
                         self.get_logger().info(
                             f"The limit of {limit} was overpassed but the interval is to short to split. The iteration will be ended.")
                         is_done = True
-                    else:
+                    elif not d_count or delta == interval:
                         self.get_logger().info(f"The limit of {limit} was overpassed. Splitting the interval in half.")
 
                         # If we are not done yet and the limit was overpassed we divide the delta in half
@@ -1094,6 +1100,10 @@ class FncApiClient:
                             delta = timedelta(hours=1)
                         sd = str_to_utc_datetime(context.get_checkpoint())
                         ed = sd + delta
+                    else:
+                        self.get_logger().info(
+                            f"The limit of {limit} was overpassed with reduced interval. The iteration will be ended.")
+                        is_done = True
                 else:
                     raise e
         self.get_logger().info("Iteration completed for the history polling.")
