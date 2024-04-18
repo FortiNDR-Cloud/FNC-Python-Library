@@ -11,7 +11,7 @@ from fnc.api.endpoints import EndpointKey
 from fnc.errors import ErrorMessages, ErrorType, FncClientError
 from fnc.fnc_client import FncClient
 from fnc.global_variables import *
-from fnc.utils import datetime_to_utc_str
+from fnc.utils import datetime_to_utc_str, str_to_utc_datetime
 from tests.api.mocks import MockApi, MockEndpoint, MockRestClient
 from tests.utils import *
 
@@ -897,17 +897,21 @@ def test_and_validate_get_search_window_succeed(mocker):
     default_delay = 10
     delay = random.randint(11, 50)
 
+    default_date = now - timedelta(minutes=default_delay)
+    default_date_with_delay = now - timedelta(minutes=delay)
+
     default_start_date = now.replace(hour=0, minute=0, second=0,
                                      microsecond=0, tzinfo=timezone.utc)
 
     start_date = now - timedelta(minutes=random.randint(delay+1, 100))
     start_date_str = datetime_to_utc_str(start_date)
+    default_start_date = default_date
 
     checkpoint = now - timedelta(minutes=random.randint(delay+1, 100))
     checkpoint_str = datetime_to_utc_str(checkpoint)
 
     end_date = now - timedelta(minutes=delay)
-    default_end_date = now - timedelta(minutes=default_delay)
+    default_end_date = default_date
 
     received_start_date, received_end_date = client._get_and_validate_search_window(
         start_date_str=start_date_str, polling_delay=delay, checkpoint=checkpoint_str)
@@ -920,16 +924,6 @@ def test_and_validate_get_search_window_succeed(mocker):
 
     assert received_start_date == start_date
     assert received_end_date - end_date < timedelta(seconds=1)
-
-    received_start_date, received_end_date = client._get_and_validate_search_window(polling_delay=delay)
-
-    assert received_start_date - default_start_date < timedelta(seconds=1)
-    assert received_end_date - end_date < timedelta(seconds=1)
-
-    received_start_date, received_end_date = client._get_and_validate_search_window()
-
-    assert received_start_date - default_start_date < timedelta(seconds=1)
-    assert received_end_date - default_end_date < timedelta(seconds=1)
 
     r_d = random.randint(1, 7)
     r_h = random.randint(1, 24)
@@ -965,15 +959,82 @@ def test_and_validate_get_search_window_failure_inverted(mocker):
     now = datetime.now(timezone.utc)
 
     delay = random.randint(11, 100)
+    past_1 = random.randint(2, 24)
+    past_2 = random.randint(1, past_1-1)
 
-    start_date = now - timedelta(minutes=random.randint(1, delay-1))
-    start_date_str = datetime_to_utc_str(start_date)
+    inverted_start_date = datetime_to_utc_str(now - timedelta(hours=past_2))
+    inverted_end_date = datetime_to_utc_str(now - timedelta(hours=past_1))
+
+    close_start_date = now - timedelta(minutes=random.randint(1, delay-1))
+    close_start_date_str = datetime_to_utc_str(close_start_date)
+
+    close_end_date = now - timedelta(minutes=random.randint(1, delay-1))
+    close_end_date_str = datetime_to_utc_str(close_end_date)
+
+    future_start_date = now + timedelta(minutes=random.randint(1, 100))
+    future_start_date_str = datetime_to_utc_str(future_start_date)
+
+    future_end_date = now + timedelta(minutes=random.randint(1, 100))
+    future_end_date_str = datetime_to_utc_str(future_end_date)
+
+    # If start and end date are inverted an Inverted Time Window exception is thrown
 
     with pytest.raises(FncClientError) as e:
         _, _ = client._get_and_validate_search_window(
-            start_date_str=start_date_str, polling_delay=delay)
+            start_date_str=inverted_start_date, end_date_str=inverted_end_date, polling_delay=delay)
 
-    assert e.value.error_type == ErrorType.POLLING_INVALID_TIME_WINDOW_ERROR
+    assert e.value.error_type == ErrorType.POLLING_INVERTED_TIME_WINDOW_ERROR
+
+    # If no start date is passed, start_date and end_date becomes equals and
+    # Empty Time Window exception is thrown
+
+    with pytest.raises(FncClientError) as e:
+        _, _ = client._get_and_validate_search_window(polling_delay=delay)
+
+    assert e.value.error_type == ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR
+
+    with pytest.raises(FncClientError) as e:
+        _, _ = client._get_and_validate_search_window()
+
+    assert e.value.error_type == ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR
+
+    # If start and end date are in the future the default is used and an Empty Time Window exception is thrown
+
+    with pytest.raises(FncClientError) as e:
+        _, _ = client._get_and_validate_search_window(
+            start_date_str=close_start_date_str, polling_delay=delay)
+
+    assert e.value.error_type == ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR
+
+    with pytest.raises(FncClientError) as e:
+        _, _ = client._get_and_validate_search_window(
+            start_date_str=future_start_date_str, polling_delay=delay)
+
+    assert e.value.error_type == ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR
+
+    with pytest.raises(FncClientError) as e:
+        _, _ = client._get_and_validate_search_window(
+            end_date_str=close_end_date_str, polling_delay=delay)
+
+    assert e.value.error_type == ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR
+
+    with pytest.raises(FncClientError) as e:
+        _, _ = client._get_and_validate_search_window(
+            end_date_str=future_end_date_str, polling_delay=delay)
+
+    assert e.value.error_type == ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR
+
+    with pytest.raises(FncClientError) as e:
+        _, _ = client._get_and_validate_search_window(
+            start_date_str=close_start_date_str, end_date_str=close_end_date_str, polling_delay=delay)
+
+    assert e.value.error_type == ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR
+
+    with pytest.raises(FncClientError) as e:
+        _, _ = client._get_and_validate_search_window(
+            start_date_str=future_start_date_str, end_date_str=future_end_date_str, polling_delay=delay)
+
+    assert e.value.error_type == ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR
 
 
 def test_and_validate_get_search_window_failure_invalid_start_date(mocker):
@@ -1254,8 +1315,19 @@ def test_prepare_continuous_polling_invalid_args_from_context(mocker):
     )
     mock_validate_args = mocker.patch.object(client, '_validate_continuous_polling_args', side_effect=[fnc_error, None])
 
+    # If no start date is passed the get_and_validate_search_window should fail
+    # with Empty Time Window since start_date and end_date becomes equal
+    with pytest.raises(FncClientError) as e:
+        _ = client._prepare_continuous_polling(context=context)
+
+    assert e.value.error_type == ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR
+
+    now = datetime.now(tz=timezone.utc)
+    start_date = now - timedelta(minutes=random.randint(11, 100))
+    start_date_str = datetime_to_utc_str(start_date, DEFAULT_DATE_FORMAT)
+
     context.update_polling_args(args=args_without_offset)
-    received = client._prepare_continuous_polling(context=context)
+    received = client._prepare_continuous_polling(context=context, args={'start_date': start_date_str})
 
     default_args = client.get_default_polling_args()
 
@@ -1273,7 +1345,18 @@ def test_prepare_continuous_polling_without_args(mocker):
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
     client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
 
-    received = client._prepare_continuous_polling()
+    # If no start date is passed the get_and_validate_search_window should fail
+    # with Invalid Time Window since start_date and end_date becomes equal
+    with pytest.raises(FncClientError) as e:
+        _ = client._prepare_continuous_polling()
+
+    assert e.value.error_type == ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR
+
+    now = datetime.now(tz=timezone.utc)
+    start_date = now - timedelta(minutes=random.randint(11, 100))
+    start_date_str = datetime_to_utc_str(start_date, DEFAULT_DATE_FORMAT)
+
+    received = client._prepare_continuous_polling(args={'start_date': start_date_str})
 
     default_args = client.get_default_polling_args()
 
@@ -1321,6 +1404,10 @@ def test_continuous_polling_failure(mocker):
 
 
 def test_continuous_polling_including_nothing(mocker):
+    now = datetime.now(tz=timezone.utc)
+    start_date = now - timedelta(minutes=15)
+    start_date_str = datetime_to_utc_str(start_date, DEFAULT_DATE_FORMAT)
+
     polling_args = {
         'polling_delay': 10,
         'status':  random.choice(['active', 'resolved']),
@@ -1332,7 +1419,8 @@ def test_continuous_polling_including_nothing(mocker):
         'include_pdns': False,
         'include_dhcp': False,
         'include_events': False,
-        'filter_training_detections': False
+        'filter_training_detections': False,
+        'start_date': start_date_str
     }
     api_token = 'fake_api_token'
     domain = 'fake_domain'
@@ -1377,8 +1465,9 @@ def test_continuous_polling_including_nothing(mocker):
     i = 0
     expected_endpoints = [EndpointKey.GET_DETECTIONS, EndpointKey.GET_DETECTIONS]
     expected_args = [
-        {'offset': 0, 'status': polling_args.get('status'), 'sort_by': 'device_ip', 'sort_order': 'asc', 'include': 'rules, indicators'},
-        {'offset': POLLING_MAX_DETECTIONS, 'status': polling_args.get(
+        {'offset': 0, 'status': polling_args.get('status'), 'sort_by': 'device_ip', 'sort_order': 'asc',
+         'include': 'rules, indicators', 'created_or_shared_start_date': start_date_str},
+        {'offset': 1, 'status': polling_args.get(
             'status'), 'sort_by': 'device_ip', 'sort_order': 'asc', 'include': 'rules, indicators'}
     ]
     for c in mock_call_endpoint.call_args_list:
@@ -1465,7 +1554,7 @@ def test_continuous_polling_including_all(mocker):
         {'entity': fake_detection['device_ip']},
         {'detection_uuid': fake_detection['uuid'], 'offset': 0},
         {'detection_uuid': fake_detection['uuid'], 'offset': POLLING_MAX_DETECTION_EVENTS},
-        {'offset': POLLING_MAX_DETECTIONS, 'status': polling_args.get(
+        {'offset': 1, 'status': polling_args.get(
             'status'), 'sort_by': 'device_ip', 'sort_order': 'asc', 'include': 'rules, indicators'}
     ]
     for c in mock_call_endpoint.call_args_list:
@@ -1497,9 +1586,9 @@ def test_continuous_polling_failure_get_detections_fails(mocker):
 
     unexpected_error = Exception()
 
-    inverted_window_error = FncClientError(
-        error_type=ErrorType.POLLING_INVALID_TIME_WINDOW_ERROR,
-        error_message=ErrorMessages.POLLING_INVALID_TIME_WINDOW_ERROR
+    empty_window_error = FncClientError(
+        error_type=ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR,
+        error_message=ErrorMessages.POLLING_EMPTY_TIME_WINDOW_ERROR
     )
 
     known_error = FncClientError(
@@ -1516,16 +1605,19 @@ def test_continuous_polling_failure_get_detections_fails(mocker):
 
     client.supported_api = [DetectionApi, SensorApi, EntityApi]
 
-    mocker.patch('fnc.api.api_client.FncApiClient.call_endpoint', side_effect=[inverted_window_error])
+    # If the error thrown is Polling Empty Window return empty response
+    mocker.patch('fnc.api.api_client.FncApiClient.call_endpoint', side_effect=[empty_window_error])
     for response in client.continuous_polling(args=polling_args):
         assert response == {}
 
+    # If the error thrown is not Polling Empty Window raise it again
     mocker.patch('fnc.api.api_client.FncApiClient.call_endpoint', side_effect=[known_error])
     with pytest.raises(FncClientError) as e:
         for response in client.continuous_polling(args=polling_args):
             assert not response
     assert e.value == known_error
 
+    # If the error thrown is not Polling Empty Window raise it again
     mocker.patch('fnc.api.api_client.FncApiClient.call_endpoint', side_effect=[unexpected_error])
     with pytest.raises(FncClientError) as e:
         for response in client.continuous_polling(args=polling_args):

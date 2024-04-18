@@ -485,7 +485,7 @@ class FncApiClient:
     ) -> tuple[datetime, datetime]:
 
         # We try to get the start_date from the arguments or the checkpoint.
-        # If none of them is provided we use the beginning of the day as the first start_date
+        # If none of them is provided we use the utc now - delay
         start_date_str = checkpoint or start_date_str or ""
 
         # If the polling_delay is not provided, we use the default polling delay
@@ -493,16 +493,26 @@ class FncApiClient:
 
         now = datetime.now(tz=timezone.utc)
         end_date = now - timedelta(minutes=polling_delay)
-        start_date = now.replace(hour=0, minute=0, second=0,
-                                 microsecond=0, tzinfo=timezone.utc)
+        start_date = end_date
 
+        sd = None
+        ed = None
         if start_date_str:
             try:
-                start_date = str_to_utc_datetime(start_date_str, DEFAULT_DATE_FORMAT)
+                # If start_date >= now - delay we use now - delay
+                sd = str_to_utc_datetime(start_date_str, DEFAULT_DATE_FORMAT)
+                if sd < start_date:
+                    start_date = sd
+                else:
+                    self.logger.warning(f"The provided start date {start_date_str} is to close or in the future. The default will be used.")
+
+                # If end_date >= now - delay we use now - delay
                 if end_date_str:
                     ed = str_to_utc_datetime(end_date_str, DEFAULT_DATE_FORMAT)
                     if ed < end_date:
                         end_date = ed
+                    else:
+                        self.logger.warning(f"The provided end date {end_date_str} is to close or in the future. The default will be used.")
 
             except ValueError as e:
                 error_message = f"Provided start date {start_date_str} cannot be parsed."
@@ -522,9 +532,19 @@ class FncApiClient:
 
         if end_date < start_date:
             raise FncClientError(
-                error_type=ErrorType.POLLING_INVALID_TIME_WINDOW_ERROR,
-                error_message=ErrorMessages.POLLING_INVALID_TIME_WINDOW_ERROR
+                error_type=ErrorType.POLLING_INVERTED_TIME_WINDOW_ERROR,
+                error_message=ErrorMessages.POLLING_INVERTED_TIME_WINDOW_ERROR
             )
+
+        if end_date == start_date:
+            raise FncClientError(
+                error_type=ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR,
+                error_message=ErrorMessages.POLLING_EMPTY_TIME_WINDOW_ERROR,
+                error_data={'start_date': start_date, 'end_date': end_date}
+            )
+
+        return start_date, end_date
+
         return start_date, end_date
 
     def get_default_polling_args(self) -> dict:
@@ -566,7 +586,7 @@ class FncApiClient:
                 )
                 return polling_args
             except FncClientError as e:
-                self.logger.warn(
+                self.logger.warning(
                     f'Arguments contained in the context will be ignored due to: \n [{e}]')
 
         # Getting arguments for the first call
@@ -869,7 +889,7 @@ class FncApiClient:
         polling_args = {}
 
         if not context:
-            self.logger.warn(
+            self.logger.warning(
                 "No context has been provided. The provided start date ( 7 days ago by default) will be used.")
             self.logger.info(
                 "The context is required to keep track of the latest checkpoint to avoid missing or duplicated detections.")
@@ -916,7 +936,7 @@ class FncApiClient:
                     "Detections polling failed. " +
                     "If a context was provided, the arguments used for the latest call will be in the Context's polling_args field.")
                 error_message = 'Detections cannot be pulled due to:'
-                if e.error_type != ErrorType.POLLING_INVALID_TIME_WINDOW_ERROR:
+                if e.error_type != ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR:
                     self.logger.error(f"{error_message} \n {str(e)}")
                     # self.logger.error("\n".join(traceback.format_exception(e)))
                     raise e
@@ -949,18 +969,26 @@ class FncApiClient:
         if end_date_str:
             ed = str_to_utc_datetime(end_date_str)
 
-        start_date, end_date = self._get_and_validate_search_window(
-            start_date_str=start_date_str, end_date_str=end_date_str, polling_delay=polling_delay)
+        try:
+            start_date, end_date = self._get_and_validate_search_window(
+                start_date_str=start_date_str, end_date_str=end_date_str, polling_delay=polling_delay)
+        except FncClientError as e:
+            if e.error_type == ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR:
+                start_date = e.error_data['start_date']
+                end_date = e.error_data['end_date']
+            else:
+                raise e
 
         checkpoint = ''
         if not ed or ed > end_date:
-            checkpoint = checkpoint or datetime_to_utc_str(
+            checkpoint = datetime_to_utc_str(
                 end_date,
                 DEFAULT_DATE_FORMAT
             )
         else:
+            now = datetime.now(tz=timezone.utc)
             checkpoint = checkpoint or datetime_to_utc_str(
-                datetime.now(tz=timezone.utc),
+                now - timedelta(minutes=polling_delay),
                 DEFAULT_DATE_FORMAT
             )
 
@@ -1004,7 +1032,7 @@ class FncApiClient:
         # If the there is no history tu pull we return
         if not start_date or not end_date or end_date <= start_date:
 
-            self.get_logger().warn(
+            self.get_logger().warning(
                 f"Polling history was called with invalid data (start_date= {start_date_str} and end_date= {end_date_str}). The call will be ignored.")
             return
 

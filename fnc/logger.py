@@ -18,7 +18,7 @@ class FncClientLogger:
     def error(self, log: str):
         raise NotImplementedError()
 
-    def warn(self, log: str):
+    def warning(self, log: str):
         raise NotImplementedError()
 
     def info(self, log: str):
@@ -70,8 +70,8 @@ class BasicLogger(FncClientLogger):
     def error(self, log: str):
         self.logger.error(log)
 
-    def warn(self, log: str):
-        self.logger.warn(log)
+    def warning(self, log: str):
+        self.logger.warning(log)
 
     def info(self, log: str):
         self.logger.info(log)
