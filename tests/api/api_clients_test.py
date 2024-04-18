@@ -1625,3 +1625,278 @@ def test_continuous_polling_failure_get_detections_fails(mocker):
     assert e.value != known_error
     assert e.value.error_type == ErrorType.GENERIC_ERROR
     assert e.value.exception == unexpected_error
+
+
+def test_get_splitted_context_past_start_and_end_dates(mocker):
+    random_days_past_1 = random.randint(2, 100)
+    random_days_past_2 = random.randint(1, random_days_past_1)
+
+    now = datetime.now(tz=timezone.utc)
+    date_past_1 = now - timedelta(days=random_days_past_1)
+    date_past_1_str = datetime_to_utc_str(date_past_1, DEFAULT_DATE_FORMAT)
+    date_past_2 = now - timedelta(days=random_days_past_2)
+    date_past_2_str = datetime_to_utc_str(date_past_2, DEFAULT_DATE_FORMAT)
+
+    random_delay = random.randint(1, 60)
+    expected_checkpoint = now - timedelta(minutes=random_delay)
+
+    polling_args = {
+        'polling_delay': random_delay,
+        'status':  random.choice(['active', 'resolved']),
+        'pull_muted_detections': random.choice([True, False, 'All']),
+        'pull_muted_rules':  random.choice([True, False, 'All']),
+        'pull_muted_devices':  random.choice([True, False, 'All']),
+        'include_description': random.choice([True, False]),
+        'include_signature': random.choice([True, False]),
+        'include_pdns': random.choice([True, False]),
+        'include_dhcp': random.choice([True, False]),
+        'include_events': random.choice([True, False]),
+        'filter_training_detections': random.choice([True, False])
+    }
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    # Test both start and end dates in the past
+    polling_args['start_date'] = date_past_1_str
+    polling_args['end_date'] = date_past_2_str
+
+    history_context, context = client.get_splitted_context(polling_args)
+
+    history = history_context.get_history()
+    h_checkpoint = history_context.get_checkpoint()
+
+    checkpoint_str = context.get_checkpoint()
+    checkpoint = str_to_utc_datetime(checkpoint_str, DEFAULT_DATE_FORMAT)
+
+    assert history['start_date'] == date_past_1_str
+    assert history['end_date'] == date_past_2_str
+    assert not h_checkpoint or h_checkpoint == history['start_date']
+
+    assert checkpoint - expected_checkpoint < timedelta(seconds=1)
+
+    assert not context.get_history()
+
+
+def test_get_splitted_context_past_start_date_future_end_date(mocker):
+    random_days_past_1 = random.randint(2, 100)
+    random_days_future_1 = random.randint(1, 99)
+
+    now = datetime.now(tz=timezone.utc)
+    date_past_1 = now - timedelta(days=random_days_past_1)
+    date_past_1_str = datetime_to_utc_str(date_past_1, DEFAULT_DATE_FORMAT)
+    date_future_1 = now + timedelta(days=random_days_future_1)
+    date_future_1_str = datetime_to_utc_str(date_future_1, DEFAULT_DATE_FORMAT)
+
+    random_delay = random.randint(1, 60)
+    expected_checkpoint = now - timedelta(minutes=random_delay)
+
+    polling_args = {
+        'polling_delay': random_delay,
+        'status':  random.choice(['active', 'resolved']),
+        'pull_muted_detections': random.choice([True, False, 'All']),
+        'pull_muted_rules':  random.choice([True, False, 'All']),
+        'pull_muted_devices':  random.choice([True, False, 'All']),
+        'include_description': random.choice([True, False]),
+        'include_signature': random.choice([True, False]),
+        'include_pdns': random.choice([True, False]),
+        'include_dhcp': random.choice([True, False]),
+        'include_events': random.choice([True, False]),
+        'filter_training_detections': random.choice([True, False])
+    }
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    # Test both start and end dates in the past
+    polling_args['start_date'] = date_past_1_str
+    polling_args['end_date'] = date_future_1_str
+
+    history_context, context = client.get_splitted_context(polling_args)
+
+    history = history_context.get_history()
+    h_end_date = str_to_utc_datetime(history['end_date'], DEFAULT_DATE_FORMAT)
+    h_checkpoint = history_context.get_checkpoint()
+
+    checkpoint_str = context.get_checkpoint()
+    checkpoint = str_to_utc_datetime(checkpoint_str, DEFAULT_DATE_FORMAT)
+
+    assert history['start_date'] == date_past_1_str
+    assert h_end_date - expected_checkpoint < timedelta(seconds=1)
+    assert not h_checkpoint or h_checkpoint == history['start_date']
+
+    assert checkpoint == h_end_date
+    assert not context.get_history()
+
+
+def test_get_splitted_context_past_start_date_no_end_date(mocker):
+    random_days_past_1 = random.randint(2, 100)
+
+    now = datetime.now(tz=timezone.utc)
+    date_past_1 = now - timedelta(days=random_days_past_1)
+    date_past_1_str = datetime_to_utc_str(date_past_1, DEFAULT_DATE_FORMAT)
+
+    random_delay = random.randint(1, 60)
+    expected_checkpoint = now - timedelta(minutes=random_delay)
+
+    polling_args = {
+        'polling_delay': random_delay,
+        'status':  random.choice(['active', 'resolved']),
+        'pull_muted_detections': random.choice([True, False, 'All']),
+        'pull_muted_rules':  random.choice([True, False, 'All']),
+        'pull_muted_devices':  random.choice([True, False, 'All']),
+        'include_description': random.choice([True, False]),
+        'include_signature': random.choice([True, False]),
+        'include_pdns': random.choice([True, False]),
+        'include_dhcp': random.choice([True, False]),
+        'include_events': random.choice([True, False]),
+        'filter_training_detections': random.choice([True, False])
+    }
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    # Test both start and end dates in the past
+    polling_args['start_date'] = date_past_1_str
+
+    history_context, context = client.get_splitted_context(polling_args)
+
+    history = history_context.get_history()
+    h_end_date = str_to_utc_datetime(history['end_date'], DEFAULT_DATE_FORMAT)
+    h_checkpoint = history_context.get_checkpoint()
+
+    checkpoint_str = context.get_checkpoint()
+    checkpoint = str_to_utc_datetime(checkpoint_str, DEFAULT_DATE_FORMAT)
+
+    assert history['start_date'] == date_past_1_str
+    assert h_end_date - expected_checkpoint < timedelta(seconds=1)
+    assert not h_checkpoint or h_checkpoint == history['start_date']
+
+    assert checkpoint == h_end_date
+    assert not context.get_history()
+
+
+def test_get_splitted_context_no_start_date_no_end_date(mocker):
+    now = datetime.now(tz=timezone.utc)
+    random_delay = random.randint(1, 60)
+    expected_checkpoint = now - timedelta(minutes=random_delay)
+
+    polling_args = {
+        'polling_delay': random_delay,
+        'status':  random.choice(['active', 'resolved']),
+        'pull_muted_detections': random.choice([True, False, 'All']),
+        'pull_muted_rules':  random.choice([True, False, 'All']),
+        'pull_muted_devices':  random.choice([True, False, 'All']),
+        'include_description': random.choice([True, False]),
+        'include_signature': random.choice([True, False]),
+        'include_pdns': random.choice([True, False]),
+        'include_dhcp': random.choice([True, False]),
+        'include_events': random.choice([True, False]),
+        'filter_training_detections': random.choice([True, False])
+    }
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    # Test both start and end dates in the past
+    history_context, context = client.get_splitted_context(polling_args)
+
+    history = history_context.get_history()
+    h_checkpoint = history_context.get_checkpoint()
+
+    checkpoint_str = context.get_checkpoint()
+    checkpoint = str_to_utc_datetime(checkpoint_str, DEFAULT_DATE_FORMAT)
+
+    assert history['start_date'] == history['end_date']
+    assert not h_checkpoint or h_checkpoint == history['start_date']
+
+    assert checkpoint - expected_checkpoint < timedelta(seconds=1)
+    assert not context.get_history()
+
+
+def test_get_splitted_context_future_start_date_future_end_date(mocker):
+    random_days_future_1 = random.randint(1, 99)
+    random_days_future_2 = random.randint(random_days_future_1, 100)
+
+    now = datetime.now(tz=timezone.utc)
+    date_future_1 = now + timedelta(days=random_days_future_1)
+    date_future_1_str = datetime_to_utc_str(date_future_1, DEFAULT_DATE_FORMAT)
+    date_future_2 = now + timedelta(days=random_days_future_2)
+    date_future_2_str = datetime_to_utc_str(date_future_2, DEFAULT_DATE_FORMAT)
+
+    random_delay = random.randint(1, 60)
+    expected_checkpoint = now - timedelta(minutes=random_delay)
+
+    polling_args = {
+        'polling_delay': random_delay,
+        'status':  random.choice(['active', 'resolved']),
+        'pull_muted_detections': random.choice([True, False, 'All']),
+        'pull_muted_rules':  random.choice([True, False, 'All']),
+        'pull_muted_devices':  random.choice([True, False, 'All']),
+        'include_description': random.choice([True, False]),
+        'include_signature': random.choice([True, False]),
+        'include_pdns': random.choice([True, False]),
+        'include_dhcp': random.choice([True, False]),
+        'include_events': random.choice([True, False]),
+        'filter_training_detections': random.choice([True, False])
+    }
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    # Test both start and end dates in the past
+    polling_args['start_date'] = date_future_1_str
+    polling_args['end_date'] = date_future_2_str
+
+    history_context, context = client.get_splitted_context(polling_args)
+
+    history = history_context.get_history()
+    h_start_date = str_to_utc_datetime(history['start_date'], DEFAULT_DATE_FORMAT)
+    h_end_date = str_to_utc_datetime(history['end_date'], DEFAULT_DATE_FORMAT)
+    h_checkpoint = history_context.get_checkpoint()
+
+    checkpoint_str = context.get_checkpoint()
+    checkpoint = str_to_utc_datetime(checkpoint_str, DEFAULT_DATE_FORMAT)
+
+    assert h_start_date - expected_checkpoint < timedelta(seconds=1)
+    assert h_start_date == h_end_date
+    assert not h_checkpoint or h_checkpoint == history['start_date']
+
+    assert checkpoint == h_end_date
+    assert not context.get_history()
+
+    # Test both start and end dates in the past
+    polling_args['start_date'] = date_future_2_str
+    polling_args['end_date'] = date_future_1_str
+
+    history_context, context = client.get_splitted_context(polling_args)
+
+    history = history_context.get_history()
+    h_start_date = str_to_utc_datetime(history['start_date'], DEFAULT_DATE_FORMAT)
+    h_end_date = str_to_utc_datetime(history['end_date'], DEFAULT_DATE_FORMAT)
+    h_checkpoint = history_context.get_checkpoint()
+
+    checkpoint_str = context.get_checkpoint()
+    checkpoint = str_to_utc_datetime(checkpoint_str, DEFAULT_DATE_FORMAT)
+
+    assert h_start_date - expected_checkpoint < timedelta(seconds=1)
+    assert h_start_date == h_end_date
+    assert not h_checkpoint or h_checkpoint == history['start_date']
+
+    assert checkpoint == h_end_date
+    assert not context.get_history()
