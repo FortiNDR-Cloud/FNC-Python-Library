@@ -1900,3 +1900,179 @@ def test_get_splitted_context_future_start_date_future_end_date(mocker):
 
     assert checkpoint == h_end_date
     assert not context.get_history()
+
+
+def test_poll_history_failure_invalid_dates(mocker):
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+
+    random_days_1 = random.randint(2, 100)
+    random_days_2 = random.randint(1, random_days_1)
+
+    now = datetime.now(tz=timezone.utc)
+    date_past_1 = datetime_to_utc_str(now - timedelta(days=random_days_1))
+    date_past_2 = datetime_to_utc_str(now - timedelta(days=random_days_2))
+    date_future_1 = datetime_to_utc_str(now + timedelta(days=random_days_1))
+
+    histories = [
+        {
+            'start_date': date_past_2,
+            'end_date': date_past_1,
+        },
+        {
+            'start_date': date_future_1,
+            'end_date': date_past_1,
+        },
+        {
+            'start_date': date_past_1,
+            'end_date': date_future_1,
+        },
+        {
+            'start_date': '',
+            'end_date': date_past_1,
+        },
+        {
+            'start_date': date_past_1,
+            'end_date': '',
+        }
+    ]
+    for history in histories:
+        context = ApiContext()
+        context.update_history(history)
+        for _ in client.poll_history(context=context, args={}):
+            assert False
+
+
+def test_poll_history_succeed_no_enrichment(mocker):
+    limit = random.randint(100, 500)
+    polling_args = {
+        'polling_delay': 10,
+        'status':  random.choice(['active', 'resolved']),
+        'pull_muted_detections': 'ALL',
+        'pull_muted_rules':  'ALL',
+        'pull_muted_devices':  'ALL',
+        'include_description': True,
+        'include_signature': True,
+        'include_pdns': False,
+        'include_dhcp': False,
+        'include_events': False,
+        'filter_training_detections': True,
+        'limit': limit
+    }
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mock_validate_token = mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+    assert mock_validate_token.call_count == 1
+
+    detections_responses = []
+    days = random.randint(2, 5)
+    for i in range(1, days):
+        detections_response = get_fake_detections_response(d_count=limit, r_count=random.randint(1, limit))
+        detections_responses.append(detections_response)
+    polling_args['start_date'] = f'{days} days ago'
+
+    mock_continuous_calling = mocker.patch('fnc.api.api_client.FncApiClient.continuous_polling', return_value=detections_responses)
+
+    context, _ = client.get_splitted_context(polling_args)
+
+    c = 1
+    for detections in client.poll_history(context=context, args=polling_args):
+        assert not deep_diff(detections_responses[c-1], detections)
+        c += 1
+
+    assert c == days
+    assert mock_continuous_calling.call_count == 1
+
+    for c in mock_continuous_calling.call_args_list:
+        assert c.kwargs
+        args: dict = c.kwargs.get('args', None)
+        ctx: ApiContext = c.kwargs.get('context', None)
+        assert args and ctx
+
+        assert not args.get('limit', None)
+        start_date = args.get('start_date', None)
+        end_date = args.get('end_date', None)
+        assert start_date and start_date == context.get_history()['start_date']
+        assert end_date and end_date == context.get_history()['end_date']
+
+        assert not deep_diff(ctx.get_history(), context.get_history())
+        assert ctx.get_checkpoint() == context.get_history()['end_date']
+
+
+def test_poll_history_succeed_enrichment(mocker):
+    limit = random.randint(100, 500)
+    days = 2  # random.randint(2, 5)
+    enrichments = [False, False, False]
+    enrichments[random.randint(0, 2)] = True
+
+    polling_args = {
+        'polling_delay': 10,
+        'status':  random.choice(['active', 'resolved']),
+        'pull_muted_detections': False,
+        'pull_muted_rules':  False,
+        'pull_muted_devices':  False,
+        'include_description': False,
+        'include_signature': False,
+        'include_pdns': enrichments[0],
+        'include_dhcp': enrichments[1],
+        'include_events': enrichments[2],
+        'filter_training_detections': False,
+        'limit': limit * days
+    }
+    api_token = 'fake_api_token'
+    domain = 'fake_domain'
+    agent = 'fake_agent'
+
+    mock_validate_token = mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
+    client = FncClient.get_api_client(name=agent, api_token=api_token, domain=domain)
+    assert mock_validate_token.call_count == 1
+
+    detections_responses = []
+    generator_responses = []
+
+    for i in range(0, days):
+        responses = []
+        detections_response = get_fake_detections_response(d_count=limit, r_count=random.randint(1, limit))
+        responses.append(detections_response)
+        detections_responses.append(detections_response)
+        empty_response = get_empty_detections_response()
+        responses.append(empty_response)
+        detections_responses.append(empty_response)
+        # iter: Iterator[List[dict]] = Iterator(responses)
+        generator_responses.append(iter(responses))
+
+    polling_args['start_date'] = f'{days} days ago'
+
+    mock_continuous_calling = mocker.patch('fnc.api.api_client.FncApiClient.continuous_polling', side_effect=generator_responses)
+
+    context, _ = client.get_splitted_context(polling_args)
+
+    c = 0
+    for detections in client.poll_history(context=context, args=polling_args):
+        assert not deep_diff(detections_responses[c], detections)
+        c += 1
+
+    assert c == days * 2
+    assert mock_continuous_calling.call_count == days
+
+    for c in mock_continuous_calling.call_args_list:
+        assert c.kwargs
+        args: dict = c.kwargs.get('args', None)
+        ctx: ApiContext = c.kwargs.get('context', None)
+        assert args and ctx
+
+        assert not args.get('limit', None)
+        start_date = args.get('start_date', None)
+        end_date = args.get('end_date', None)
+        assert start_date and start_date == context.get_history()['start_date']
+        assert end_date and end_date == context.get_history()['end_date']
+
+        assert not deep_diff(ctx.get_history(), context.get_history())
+        assert ctx.get_checkpoint() == context.get_history()['end_date']
