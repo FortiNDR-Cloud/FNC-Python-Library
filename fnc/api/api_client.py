@@ -1023,15 +1023,19 @@ class FncApiClient:
         args = args.copy()
         history = context.get_history()
 
+        now = datetime.now(tz=timezone.utc)
         start_date_str = context.get_checkpoint() or history.get('start_date', None)
         end_date_str = history.get('end_date', None)
 
         start_date = str_to_utc_datetime(start_date_str)
         end_date = str_to_utc_datetime(end_date_str)
 
-        # If the there is no history tu pull we return
-        if not start_date or not end_date or end_date <= start_date:
-
+        # If the there is no history to pull we return
+        if (
+            not start_date or not end_date or
+            end_date > now or start_date > now or
+            end_date <= start_date
+        ):
             self.get_logger().warning(
                 f"Polling history was called with invalid data (start_date= {start_date_str} and end_date= {end_date_str}). The call will be ignored.")
             return
@@ -1096,6 +1100,7 @@ class FncApiClient:
                         args['limit'] = limit - count
 
                     previous_checkpoint = context.get_checkpoint()
+                    context.update_checkpoint(args['end_date'])
 
                     is_done = delta != interval
                     delta = interval
