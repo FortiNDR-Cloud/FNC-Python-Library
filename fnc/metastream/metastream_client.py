@@ -313,7 +313,7 @@ class FncMetastreamClient:
 
         self.get_logger().info(f"Polling history from {start_date_str} to {end_date_str}")
 
-        checkpoint = None
+        checkpoint = ''
         for event_type in event_types:
             for events in self.fetch_events(
                 context=context, event_type=event_type,
@@ -322,6 +322,6 @@ class FncMetastreamClient:
                 yield events
                 checkpoint = checkpoint or context.get_checkpoint()
 
-        history['start_date'] = datetime_to_utc_str(checkpoint=checkpoint, format=DEFAULT_DATE_FORMAT)
+        history['start_date'] = checkpoint
         context.update_history(history)
-        context.update_checkpoint(checkpoint=None)
+        context.update_checkpoint(checkpoint='')
