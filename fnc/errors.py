@@ -39,6 +39,7 @@ class ErrorMessages:
 
     # Metastream related error's messages
 
+    METASTREAM_MISSING_CONTEXT = "The Context is Missing. Ensure that the appropriate context for fetching events."
     EVENTS_FETCH_VALIDATION_ERROR = "Some of the arguments provided for fetching events from metastream are invalid:\n [{failed}]"
     EVENTS_UNKNOWN_DATE_PREFIX_FORMAT = "The date format for the date_prefix {date_prefix} is unknown [{error}]."
 
@@ -58,7 +59,7 @@ class ErrorType(Enum):
     POLLING_INVERTED_TIME_WINDOW_ERROR = auto()
     POLLING_EMPTY_TIME_WINDOW_ERROR = auto()
     POLLING_LIMIT_OVERPASSED = auto()
-    POLLING_MISSING_CONTEXT = auto()
+    MISSING_CONTEXT = auto()
     # Endpoint related errors
 
     ENDPOINT_ERROR = auto()
