@@ -2,10 +2,9 @@ import os.path
 from datetime import datetime, timedelta, timezone
 from typing import Iterator, List
 
-from fnc.logger import BasicLogger, FncClientLogger
-
 from ..errors import ErrorMessages, ErrorType, FncClientError
 from ..global_variables import *
+from ..logger import BasicLogger, FncClientLogger
 from ..utils import *
 # from .auth_client import Auth
 from .s3_client import MetastreamContext, S3Client
@@ -30,7 +29,7 @@ class FncMetastreamClient:
         user_agent = f"{CLIENT_DEFAULT_USER_AGENT}-{name}"
         self.logger = logger or BasicLogger(name=user_agent)
 
-        self.logger.info(f"Initializing {user_agent}.")
+        self.get_logger().info(f"Initializing {user_agent}.")
 
         if not all([account_code, access_key, secret_key]):
             missing = []
@@ -52,17 +51,20 @@ class FncMetastreamClient:
         self.access_key = access_key
         self.secret_key = secret_key
         if not bucket:
-            self.logger.info("No bucket was provided. We will use the default.")
+            self.get_logger().info("No bucket was provided. We will use the default.")
         self.bucket = bucket or METASTREAM_DEFAULT_BUCKET
 
-        self.logger.info(f"{user_agent} successfully initialized.")
+        self.get_logger().info(f"{user_agent} successfully initialized.")
+
+    def get_logger(self):
+        return self.logger
 
     def _get_customer_prefix(self) -> str:
         """returns the bucket key prefix up to the account_code"""
         return f'v1/customer/cust-{self.account_code}'
 
     def _validate(self, event_types: List[str], start_date: datetime, end_date: datetime = None):
-        self.logger.debug("Validating metastream events fetch request's arguments.")
+        self.get_logger().debug("Validating metastream events fetch request's arguments.")
 
         failed = []
         if not all(e in METASTREAM_SUPPORTED_EVENT_TYPES for e in event_types):
@@ -90,7 +92,7 @@ class FncMetastreamClient:
                 error_data={'failed': failed}
             )
         else:
-            self.logger.info("The arguments for the metastream events fetch request has been successfully validated.")
+            self.get_logger().info("The arguments for the metastream events fetch request has been successfully validated.")
 
     def _basename(self, prefix):
         return os.path.basename(prefix.rstrip('/'))
@@ -116,14 +118,14 @@ class FncMetastreamClient:
 
     def _get_prefixes(self, s3: S3Client, event_type: str, start_day: datetime = None, exact_day: bool = True, context: MetastreamContext = None):
         if not s3:
-            self.logger.warning("Prefixes for the S3 buckets cannot be retrieved due to: The client to connect to AWS S3 bucket was not provided.")
+            self.get_logger().warning("Prefixes for the S3 buckets cannot be retrieved due to: The client to connect to AWS S3 bucket was not provided.")
             return
 
         if not start_day:
-            self.logger.warning("Prefixes for the S3 buckets cannot be retrieved due to: The start day was not provided.")
+            self.get_logger().warning("Prefixes for the S3 buckets cannot be retrieved due to: The start day was not provided.")
             return
 
-        self.logger.debug(f"Processing buckets for customer prefix: '{self._get_customer_prefix()}'")
+        self.get_logger().debug(f"Processing buckets for customer prefix: '{self._get_customer_prefix()}'")
 
         start_day = start_day.replace(hour=0, minute=0, second=0,
                                       microsecond=0, tzinfo=timezone.utc)
@@ -132,13 +134,13 @@ class FncMetastreamClient:
             sensor = self._basename(sensor_prefix)
             if sensor in ['devices', 'signals']:
                 continue
-            self.logger.debug(f"Processing sensor '{sensor}'")
+            self.get_logger().debug(f"Processing sensor '{sensor}'")
 
             for date_prefix in s3.fetch_common_prefixes(sensor_prefix):
                 d = self._prefix_to_datetime(date_prefix=date_prefix)
                 if start_day > d or (exact_day and start_day != d):
                     continue
-                self.logger.debug(f"Processing date prefix '{d}'")
+                self.get_logger().debug(f"Processing date prefix '{d}'")
 
                 for event_type_prefix in s3.fetch_common_prefixes(date_prefix):
                     e_type = self._basename(event_type_prefix)
@@ -173,12 +175,12 @@ class FncMetastreamClient:
 
     def fetch_events_by_day(self, day: datetime, event_type: str, limit: int = 0, context: MetastreamContext = None) -> Iterator[List[dict]]:
         """fetches events from metastream for an entire day.  See README.md for full details"""
-        self.logger.info(f"Fetching {event_type} events for {day.date()}.")
+        self.get_logger().info(f"Fetching {event_type} events for {day.date()}.")
 
         try:
             self._validate(event_types=[event_type], start_date=day.date())
         except FncClientError as e:
-            self.logger.error(f'Events cannot be fetched due to: {str(e)}')
+            self.get_logger().error(f'Events cannot be fetched due to: {str(e)}')
             raise e
 
         start_day = day.replace(hour=0, minute=0, second=0,
@@ -186,7 +188,7 @@ class FncMetastreamClient:
 
         num_events = 0
 
-        self.logger.info("Fetching events")
+        self.get_logger().info("Fetching events")
         with S3Client(self.bucket, self.access_key, self.secret_key, self.user_agent, context=context) as s3:
             for event_type_prefix in self._get_prefixes(s3=s3, event_type=event_type, start_day=start_day, exact_day=True, context=context):
                 for events in self._get_events_from_prefix(
@@ -200,21 +202,30 @@ class FncMetastreamClient:
                      event_type: str,
                      start_date: datetime = datetime.now(
                          timezone.utc) - timedelta(minutes=5),
+                     end_date: datetime = None,
                      limit: int = 0,
                      context: MetastreamContext = None) -> Iterator[List[dict]]:
         """fetches events from metastream.  See README.md for full details"""
-        checkpoint = datetime.now(tz=timezone.utc).replace(microsecond=0)
+        # Ensure Dates are in UTC
+        end_date_str = datetime_to_utc_str(datetime_obj=end_date, format=DEFAULT_DATE_FORMAT)
+        start_date_str = datetime_to_utc_str(datetime_obj=start_date, format=DEFAULT_DATE_FORMAT)
+        start_date = str_to_utc_datetime(datetime_str=start_date_str, format=DEFAULT_DATE_FORMAT)
+        end_date = str_to_utc_datetime(datetime_str=end_date_str, format=DEFAULT_DATE_FORMAT)
+
+        checkpoint = end_date or datetime.now(tz=timezone.utc).replace(microsecond=0)
+        checkpoint_str = datetime_to_utc_str(datetime_obj=checkpoint, format=DEFAULT_DATE_FORMAT)
+
         if context:
-            context.checkpoint = checkpoint
+            context.update_checkpoint(checkpoint=checkpoint_str)
 
         event_types = [event_type]
 
-        self.logger.info(f"Fetching {event_type} events between {start_date} and {checkpoint}.")
+        self.get_logger().info(f"Fetching {event_type} events between {start_date_str} and {checkpoint}.")
 
         try:
             self._validate(event_types=event_types, start_date=start_date, end_date=checkpoint)
         except FncClientError as e:
-            self.logger.error(f'Events cannot be fetched due to: {str(e)}')
+            self.get_logger().error(f'Events cannot be fetched due to: {str(e)}')
             raise e
 
         start_day = start_date.replace(
@@ -240,19 +251,77 @@ class FncMetastreamClient:
     def fetch_event_types(self):
         return METASTREAM_SUPPORTED_EVENT_TYPES
 
+    def get_splitted_context(self, start_date_str: str = None) -> tuple[MetastreamContext, MetastreamContext]:
+        checkpoint = datetime.now(tz=timezone.utc).replace(microsecond=0)
 
-# def _fetch_account_code(env: str, account_code: str = None, api_token: str = None) -> str:
-#     """returns account_code if given or else attempts to fetch the account code from the auth API"""
-#     if not any([account_code, api_token]):
-#         raise InputError("one of 'account_code' or 'api_token' is required")
-#     if account_code:
-#         return account_code
+        h_context = MetastreamContext()
+        context = MetastreamContext()
 
-#     with Auth(api_token, env) as auth:
-#         user = auth.user()
-#         account_uuid = user.get("account_uuid")
-#         account = auth.account(account_uuid)
-#         account_code = account.get("code")
-#         if account_code is None:
-#             raise InputError("unable to get account code from auth")
-#         return account_code
+        context.update_checkpoint(checkpoint=checkpoint)
+
+        if start_date_str:
+            start_date = str_to_utc_datetime(datetime_str=start_date, format=DEFAULT_DATE_FORMAT)
+            history = {
+                'start_date': datetime_to_utc_str(start_date, DEFAULT_DATE_FORMAT),
+                'end_date': datetime_to_utc_str(checkpoint, DEFAULT_DATE_FORMAT),
+            }
+            h_context.update_history(_history=history)
+            h_context.update_checkpoint(history['start_date'])
+
+        return h_context, context
+
+    def poll_history(
+        self, context: MetastreamContext = None,
+        event_types: list = METASTREAM_SUPPORTED_EVENT_TYPES,
+        interval: timedelta = timedelta(days=1)
+    ) -> Iterator[List[dict]]:
+        # Raise Exception if No Context with History is passed
+        if not context or not context.get_history():
+            self.get_logger().error("A splitted context with the history time window is required to pull history")
+            raise FncClientError(
+                error_type=ErrorType.MISSING_CONTEXT,
+                error_message=ErrorMessages.METASTREAM_MISSING_CONTEXT
+            )
+
+        # Get the history time window
+        now = datetime.now(tz=timezone.utc)
+        history = context.get_history()
+        start_date_str = history.get('start_date', None)
+        end_date_str = history.get('end_date', None)
+
+        start_date = str_to_utc_datetime(start_date_str)
+        end_date = str_to_utc_datetime(end_date_str)
+
+        if start_date + interval < end_date:
+            end_date = start_date + interval
+            end_date_str = datetime_to_utc_str(datetime_obj=end_date, format=DEFAULT_DATE_FORMAT)
+
+        # If the there is no history to pull we return
+        if end_date == start_date:
+            self.get_logger().info(
+                f"No history to be polled (start_date= {start_date_str} and end_date= {end_date_str}). ")
+            return
+
+        if (
+            not start_date or not end_date or
+            end_date > now or start_date > now or
+            end_date < start_date
+        ):
+            self.get_logger().warning(
+                f"Polling history was called with invalid data (start_date= {start_date_str} and end_date= {end_date_str}). The call will be ignored.")
+            return
+
+        self.get_logger().info(f"Polling history from {start_date_str} to {end_date_str}")
+
+        checkpoint = None
+        for event_type in event_types:
+            for events in self.fetch_events(
+                context=context, event_type=event_type,
+                start_date=start_date, end_date=end_date
+            ):
+                yield events
+                checkpoint = checkpoint or context.get_checkpoint()
+
+        history['start_date'] = datetime_to_utc_str(checkpoint=checkpoint, format=DEFAULT_DATE_FORMAT)
+        context.update_history(history)
+        context.update_checkpoint(checkpoint=None)
