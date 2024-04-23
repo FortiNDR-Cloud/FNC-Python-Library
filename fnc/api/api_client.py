@@ -5,7 +5,6 @@ from typing import Any, Iterator, List
 
 from requests.exceptions import *
 
-from ..context import Context
 from ..errors import ErrorMessages, ErrorType, FncClientError
 from ..global_variables import *
 from ..logger import BasicLogger, FncClientLogger
@@ -14,13 +13,27 @@ from .endpoints import *
 from .rest_clients import BasicRestClient, FncRestClient
 
 
-class ApiContext(Context):
+class ApiContext:
     _polling_args: dict
 
     def __init__(self):
+        self._checkpoint = ''
+        self._history = {}
         self._polling_args = {}
         self._checkpoint = ''
         self._history = {}
+
+    def update_history(self, history: dict):
+        self._history = history or None
+
+    def get_history(self):
+        return self._history
+
+    def update_checkpoint(self, checkpoint: str):
+        self._checkpoint = checkpoint
+
+    def get_checkpoint(self):
+        return self._checkpoint
 
     def update_polling_args(self, args: dict):
         self._polling_args = args or None
@@ -989,7 +1002,7 @@ class FncApiClient:
         self.logger.debug(f"End date= {history.get('end_date')}")
 
         history_context = ApiContext()
-        history_context.update_history(history)
+        history_context.update_history(history=history)
 
         context = ApiContext()
         context.update_checkpoint(checkpoint=checkpoint)

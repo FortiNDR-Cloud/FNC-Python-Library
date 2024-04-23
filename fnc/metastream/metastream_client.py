@@ -265,14 +265,14 @@ class FncMetastreamClient:
                 'start_date': datetime_to_utc_str(start_date, DEFAULT_DATE_FORMAT),
                 'end_date': datetime_to_utc_str(checkpoint, DEFAULT_DATE_FORMAT),
             }
-            h_context.update_history(_history=history)
+            h_context.update_history(history=history)
             h_context.update_checkpoint(history['start_date'])
 
         return h_context, context
 
     def poll_history(
         self, context: MetastreamContext = None,
-        event_types: list = METASTREAM_SUPPORTED_EVENT_TYPES,
+        event_type: str = None,
         interval: timedelta = timedelta(days=1)
     ) -> Iterator[List[dict]]:
         # Raise Exception if No Context with History is passed
@@ -283,9 +283,24 @@ class FncMetastreamClient:
                 error_message=ErrorMessages.METASTREAM_MISSING_CONTEXT
             )
 
+        if not event_type or event_type not in METASTREAM_SUPPORTED_EVENT_TYPES:
+            failed = (f'Invalid event types. The event_types must be of the following: {", ".join(METASTREAM_SUPPORTED_EVENT_TYPES)}')
+            raise FncClientError(
+                error_type=ErrorType.EVENTS_FETCH_VALIDATION_ERROR,
+                error_message=ErrorMessages.EVENTS_FETCH_VALIDATION_ERROR,
+                error_data={'failed': failed}
+            )
+
         # Get the history time window
         now = datetime.now(tz=timezone.utc)
-        history = context.get_history()
+        history = context.get_history(event_type)
+
+        # If the there is no history to pull we return
+        if not history:
+            self.get_logger().info(
+                f"No history to be polled for {event_type}. ")
+            return
+
         start_date_str = history.get('start_date', None)
         end_date_str = history.get('end_date', None)
 
@@ -299,7 +314,7 @@ class FncMetastreamClient:
         # If the there is no history to pull we return
         if end_date == start_date:
             self.get_logger().info(
-                f"No history to be polled (start_date= {start_date_str} and end_date= {end_date_str}). ")
+                f"No history to be polled for {event_type} (start_date= {start_date_str} and end_date= {end_date_str}). ")
             return
 
         if (
@@ -314,13 +329,13 @@ class FncMetastreamClient:
         self.get_logger().info(f"Polling history from {start_date_str} to {end_date_str}")
 
         checkpoint = ''
-        for event_type in event_types:
-            for events in self.fetch_events(
-                context=context, event_type=event_type,
-                start_date=start_date, end_date=end_date
-            ):
-                yield events
-                checkpoint = checkpoint or context.get_checkpoint()
+
+        for events in self.fetch_events(
+            context=context, event_type=event_type,
+            start_date=start_date, end_date=end_date
+        ):
+            yield event_type, events
+            checkpoint = checkpoint or context.get_checkpoint()
 
         history['start_date'] = checkpoint
         context.update_history(history)

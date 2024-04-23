@@ -7,13 +7,34 @@ import boto3
 import botocore.client
 import botocore.config
 
-from ..context import Context
+from ..global_variables import *
 
 
-class MetastreamContext(Context):
+class MetastreamContext:
     def __init__(self):
+        self._checkpoint = ''
+        self._history = {}
         self.file_downloads = 0
         self.api_calls = 0
+
+    def update_history(self, event_type: str = None, history: dict = None):
+        if not event_type:
+            for event_type in METASTREAM_SUPPORTED_EVENT_TYPES:
+                self.update_history(event_type=event_type, history=history)
+        elif history:
+            self._history[event_type] = history
+
+    def get_history(self, event_type: str = None):
+        if not event_type:
+            return None
+
+        return self._history
+
+    def update_checkpoint(self, checkpoint: str):
+        self._checkpoint = checkpoint
+
+    def get_checkpoint(self):
+        return self._checkpoint
 
     def file_downloads_incr(self):
         self.file_downloads += 1
