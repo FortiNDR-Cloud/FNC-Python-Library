@@ -7,12 +7,13 @@ import boto3
 import botocore.client
 import botocore.config
 
+from ..context import Context
 
-class MetastreamContext:
+
+class MetastreamContext(Context):
     def __init__(self):
         self.file_downloads = 0
         self.api_calls = 0
-        self.checkpoint = None
 
     def file_downloads_incr(self):
         self.file_downloads += 1
