@@ -5,6 +5,7 @@ from typing import Any, Iterator, List
 
 from requests.exceptions import *
 
+from ..context import Context
 from ..errors import ErrorMessages, ErrorType, FncClientError
 from ..global_variables import *
 from ..logger import BasicLogger, FncClientLogger
@@ -13,9 +14,7 @@ from .endpoints import *
 from .rest_clients import BasicRestClient, FncRestClient
 
 
-class ApiContext:
-    _checkpoint: str
-    _history: dict
+class ApiContext(Context):
     _polling_args: dict
 
     def __init__(self):
@@ -28,18 +27,6 @@ class ApiContext:
 
     def get_polling_args(self):
         return self._polling_args
-
-    def update_history(self, _history: dict):
-        self._history = _history or None
-
-    def get_history(self):
-        return self._history
-
-    def update_checkpoint(self, checkpoint: str):
-        self._checkpoint = checkpoint
-
-    def get_checkpoint(self):
-        return self._checkpoint
 
     def clear_args(self):
         self._polling_args = {}
@@ -1015,7 +1002,7 @@ class FncApiClient:
         if not context or not context.get_history():
             self.logger.error("A splitted context with the history time window is required to pull history")
             raise FncClientError(
-                error_type=ErrorType.POLLING_MISSING_CONTEXT,
+                error_type=ErrorType.MISSING_CONTEXT,
                 error_message=ErrorMessages.POLLING_MISSING_CONTEXT
             )
 
@@ -1031,16 +1018,21 @@ class FncApiClient:
         end_date = str_to_utc_datetime(end_date_str)
 
         # If the there is no history to pull we return
+        if end_date == start_date:
+            self.get_logger().info(
+                f"No history to be polled (start_date= {start_date_str} and end_date= {end_date_str}). ")
+            return
+
         if (
             not start_date or not end_date or
             end_date > now or start_date > now or
-            end_date <= start_date
+            end_date < start_date
         ):
             self.get_logger().warning(
                 f"Polling history was called with invalid data (start_date= {start_date_str} and end_date= {end_date_str}). The call will be ignored.")
             return
 
-        self.get_logger().info(f"Polling history day by day (from {start_date_str} to {end_date_str})")
+        self.get_logger().info(f"Polling history from {start_date_str} to {end_date_str}")
 
         args['start_date'] = start_date_str
         args['end_date'] = end_date_str
