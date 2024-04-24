@@ -116,7 +116,7 @@ class FncMetastreamClient:
                 exception=e
             ) from e
 
-    def _get_prefixes(self, s3: S3Client, event_type: str, start_day: datetime = None, exact_day: bool = True, context: MetastreamContext = None):
+    def _get_prefixes(self, s3: S3Client, event_type: str, start_day: datetime = None, end_day: datetime = None, context: MetastreamContext = None):
         if not s3:
             self.get_logger().warning("Prefixes for the S3 buckets cannot be retrieved due to: The client to connect to AWS S3 bucket was not provided.")
             return
@@ -138,8 +138,15 @@ class FncMetastreamClient:
 
             for date_prefix in s3.fetch_common_prefixes(sensor_prefix):
                 d = self._prefix_to_datetime(date_prefix=date_prefix)
-                if start_day > d or (exact_day and start_day != d):
-                    continue
+                if not end_day:
+                    # We are pulling a full single day
+                    if start_day != d:
+                        continue
+                else:
+                    # We are pulling a indow of time
+                    if start_day > d or end_day < d:
+                        continue
+
                 self.get_logger().debug(f"Processing date prefix '{d}'")
 
                 for event_type_prefix in s3.fetch_common_prefixes(date_prefix):
@@ -190,7 +197,7 @@ class FncMetastreamClient:
 
         self.get_logger().info("Fetching events")
         with S3Client(self.bucket, self.access_key, self.secret_key, self.user_agent, context=context) as s3:
-            for event_type_prefix in self._get_prefixes(s3=s3, event_type=event_type, start_day=start_day, exact_day=True, context=context):
+            for event_type_prefix in self._get_prefixes(s3=s3, event_type=event_type, start_day=start_day, context=context):
                 for events in self._get_events_from_prefix(
                     s3=s3, prefix=event_type_prefix,
                     limit=limit, num_events=num_events
@@ -228,16 +235,18 @@ class FncMetastreamClient:
             self.get_logger().error(f'Events cannot be fetched due to: {str(e)}')
             raise e
 
-        start_day = start_date.replace(
-            hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
-
         num_events = 0
         cut_off = checkpoint - timedelta(seconds=1)
+
+        start_day = start_date.replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+        end_day = cut_off.replace(
+            hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
 
         with S3Client(self.bucket, self.access_key, self.secret_key, self.user_agent, context=context) as s3:
             for event_type_prefix in self._get_prefixes(
                 s3=s3, event_type=event_type,
-                start_day=start_day, exact_day=False,
+                start_day=start_day, end_day=end_day,
                 context=context
             ):
                 for events in self._get_events_from_prefix(
@@ -261,8 +270,10 @@ class FncMetastreamClient:
 
         if start_date_str:
             start_date = str_to_utc_datetime(datetime_str=start_date_str, format=DEFAULT_DATE_FORMAT)
+            sd = start_date.replace(
+                hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
             history = {
-                'start_date': datetime_to_utc_str(start_date, DEFAULT_DATE_FORMAT),
+                'start_date': datetime_to_utc_str(sd, DEFAULT_DATE_FORMAT),
                 'end_date': datetime_to_utc_str(checkpoint, DEFAULT_DATE_FORMAT),
             }
             h_context.update_history(history=history)
@@ -276,7 +287,7 @@ class FncMetastreamClient:
         interval: timedelta = timedelta(days=1)
     ) -> Iterator[List[dict]]:
         # Raise Exception if No Context with History is passed
-        if not context or not context.get_history():
+        if not context or not context.get_history(event_type):
             self.get_logger().error("A splitted context with the history time window is required to pull history")
             raise FncClientError(
                 error_type=ErrorType.MISSING_CONTEXT,
@@ -290,6 +301,9 @@ class FncMetastreamClient:
                 error_message=ErrorMessages.EVENTS_FETCH_VALIDATION_ERROR,
                 error_data={'failed': failed}
             )
+
+        if interval > timedelta(days=1):
+            interval = timedelta(days=1)
 
         # Get the history time window
         now = datetime.now(tz=timezone.utc)
