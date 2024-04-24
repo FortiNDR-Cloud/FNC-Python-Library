@@ -20,15 +20,15 @@ class MetastreamContext:
     def update_history(self, event_type: str = None, history: dict = None):
         if not event_type:
             for event_type in METASTREAM_SUPPORTED_EVENT_TYPES:
-                self.update_history(event_type=event_type, history=history)
+                self.update_history(event_type=event_type, history=history.copy())
         elif history:
             self._history[event_type] = history
 
     def get_history(self, event_type: str = None):
-        if not event_type:
+        if not event_type or event_type not in self._history:
             return None
 
-        return self._history
+        return self._history.get(event_type)
 
     def update_checkpoint(self, checkpoint: str):
         self._checkpoint = checkpoint
