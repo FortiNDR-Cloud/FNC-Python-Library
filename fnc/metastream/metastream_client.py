@@ -179,12 +179,15 @@ class FncMetastreamClient:
 
             events = s3.fetch_gzipped_json_lines_file(
                 obj.get('Key'))
+
             if limit:
+                self.get_logger().debug(f"{limit - num_events} events reported from {obj.get('Key')}")
                 yield events[:limit - num_events]
                 num_events += len(events)
                 if num_events >= limit:
                     return
             else:
+                self.get_logger().debug(f"{len(events)} events reported from {obj.get('Key')}")
                 yield events
 
     def fetch_events_by_day(self, day: datetime, event_type: str, limit: int = 0, context: MetastreamContext = None) -> Iterator[List[dict]]:
