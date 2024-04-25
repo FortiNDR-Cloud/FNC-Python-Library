@@ -308,56 +308,63 @@ class FncMetastreamClient:
                 error_message=ErrorMessages.EVENTS_FETCH_VALIDATION_ERROR,
                 error_data={'failed': failed}
             )
+        try:
+            if interval > timedelta(days=1):
+                interval = timedelta(days=1)
 
-        if interval > timedelta(days=1):
-            interval = timedelta(days=1)
+            # Get the history time window
+            now = datetime.now(tz=timezone.utc)
+            history = context.get_history(event_type)
 
-        # Get the history time window
-        now = datetime.now(tz=timezone.utc)
-        history = context.get_history(event_type)
+            # If the there is no history to pull we return
+            if not history:
+                self.get_logger().info(
+                    f"No history to be polled for {event_type}. ")
+                return
 
-        # If the there is no history to pull we return
-        if not history:
-            self.get_logger().info(
-                f"No history to be polled for {event_type}. ")
-            return
+            start_date_str = history.get('start_date', None)
+            end_date_str = history.get('end_date', None)
 
-        start_date_str = history.get('start_date', None)
-        end_date_str = history.get('end_date', None)
+            start_date = str_to_utc_datetime(start_date_str)
+            end_date = str_to_utc_datetime(end_date_str)
 
-        start_date = str_to_utc_datetime(start_date_str)
-        end_date = str_to_utc_datetime(end_date_str)
+            if start_date + interval < end_date:
+                end_date = start_date + interval
+                end_date_str = datetime_to_utc_str(datetime_obj=end_date, format=DEFAULT_DATE_FORMAT)
 
-        if start_date + interval < end_date:
-            end_date = start_date + interval
-            end_date_str = datetime_to_utc_str(datetime_obj=end_date, format=DEFAULT_DATE_FORMAT)
+            # If the there is no history to pull we return
+            if end_date == start_date:
+                self.get_logger().info(
+                    f"No history to be polled for {event_type} (start_date= {start_date_str} and end_date= {end_date_str}). ")
+                return
 
-        # If the there is no history to pull we return
-        if end_date == start_date:
-            self.get_logger().info(
-                f"No history to be polled for {event_type} (start_date= {start_date_str} and end_date= {end_date_str}). ")
-            return
+            if (
+                not start_date or not end_date or
+                end_date > now or start_date > now or
+                end_date < start_date
+            ):
+                self.get_logger().warning(
+                    f"Polling history was called with invalid data (start_date= {start_date_str} and end_date= {end_date_str}). The call will be ignored.")
+                return
 
-        if (
-            not start_date or not end_date or
-            end_date > now or start_date > now or
-            end_date < start_date
-        ):
-            self.get_logger().warning(
-                f"Polling history was called with invalid data (start_date= {start_date_str} and end_date= {end_date_str}). The call will be ignored.")
-            return
+            self.get_logger().info(f"Polling history from {start_date_str} to {end_date_str}")
 
-        self.get_logger().info(f"Polling history from {start_date_str} to {end_date_str}")
+            for events in self.fetch_events(
+                context=context, event_type=event_type,
+                start_date=start_date, end_date=end_date
+            ):
+                yield event_type, events
 
-        checkpoint = ''
-
-        for events in self.fetch_events(
-            context=context, event_type=event_type,
-            start_date=start_date, end_date=end_date
-        ):
-            yield event_type, events
-            checkpoint = checkpoint or context.get_checkpoint()
-
-        history['start_date'] = checkpoint
-        context.update_history(history=history, event_type=event_type)
-        context.update_checkpoint(checkpoint='')
+            history['start_date'] = context.get_checkpoint()
+            context.update_history(history=history, event_type=event_type)
+            context.update_checkpoint(checkpoint=None)
+        except FncClientError as e:
+            self.get_logger().error("The events history polling process failed.")
+            raise e
+        except Exception as e:
+            self.get_logger().error("The events history polling process failed.")
+            raise FncClientError(
+                error_type=ErrorType.GENERIC_ERROR,
+                error_message=ErrorMessages.GENERIC_ERROR_MESSAGE,
+                error_data={'error': e}
+            )
