@@ -165,10 +165,17 @@ class FncMetastreamClient:
             return
 
         for obj in s3.fetch_file_objects(f'{prefix}v1/'):
-            if start_date and start_date > obj.get('LastModified'):
-                continue
-            if end_date and obj.get('LastModified') > end_date:
-                continue
+            obj_time = obj.get('LastModified').time()
+
+            if start_date:
+                start_time = start_date.time()
+                if start_time > obj_time:
+                    continue
+
+            if end_date:
+                end_time = end_date.time()
+                if obj_time > end_time:
+                    continue
 
             events = s3.fetch_gzipped_json_lines_file(
                 obj.get('Key'))
