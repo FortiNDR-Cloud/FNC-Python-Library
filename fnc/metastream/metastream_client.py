@@ -333,6 +333,10 @@ class FncMetastreamClient:
 
             if start_date + interval < end_date:
                 end_date = start_date + interval
+                if start_date.day != end_date.day:
+                    end_date = end_date.replace(hour=0, minute=0, second=0,
+                                                microsecond=0, tzinfo=timezone.utc)
+
                 end_date_str = datetime_to_utc_str(datetime_obj=end_date, format=DEFAULT_DATE_FORMAT)
 
             # If the there is no history to pull we return
