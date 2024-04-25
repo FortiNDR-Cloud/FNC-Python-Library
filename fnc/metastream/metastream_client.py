@@ -276,8 +276,6 @@ class FncMetastreamClient:
         h_context = MetastreamContext()
         context = MetastreamContext()
 
-        context.update_checkpoint(checkpoint=checkpoint)
-
         if start_date_str:
             start_date = str_to_utc_datetime(datetime_str=start_date_str, format=DEFAULT_DATE_FORMAT)
             sd = start_date.replace(
@@ -288,6 +286,8 @@ class FncMetastreamClient:
             }
             h_context.update_history(history=history)
             h_context.update_checkpoint(history['start_date'])
+
+        context.update_checkpoint(checkpoint=history['end_date'])
 
         return h_context, context
 
