@@ -356,7 +356,7 @@ class FncMetastreamClient:
                 context=context, event_type=event_type,
                 start_date=start_date, end_date=end_date
             ):
-                yield event_type, events
+                yield events
 
             history['start_date'] = context.get_checkpoint()
             context.update_history(history=history, event_type=event_type)
