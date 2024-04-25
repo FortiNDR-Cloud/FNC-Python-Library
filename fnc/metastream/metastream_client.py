@@ -359,5 +359,5 @@ class FncMetastreamClient:
             checkpoint = checkpoint or context.get_checkpoint()
 
         history['start_date'] = checkpoint
-        context.update_history(history)
+        context.update_history(history=history, event_type=event_type)
         context.update_checkpoint(checkpoint='')
