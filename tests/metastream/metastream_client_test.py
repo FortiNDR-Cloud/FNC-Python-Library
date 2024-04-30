@@ -265,9 +265,10 @@ def test_get_prefixes_succeed(mocker):
             'v1/customer/cust-ac/s1/20240319/suricata/'
         ]
         i = 0
+        end_day = datetime.now(tz=timezone.utc).replace(microsecond=0) - timedelta(seconds=1)
         for prefix in client._get_prefixes(
             s3=s3, event_type=event_type,
-            start_day=start_date, exact_day=False,
+            start_day=start_date, end_day=end_day,
             context=context
         ):
             assert prefix == expected[i]
@@ -303,7 +304,7 @@ def test_get_prefixes_succeed(mocker):
         spy_fetch_common_prefixes = mocker.spy(s3, 'fetch_common_prefixes')
         for prefix in client._get_prefixes(
             s3=s3, event_type=event_type,
-            start_day=start_date, exact_day=True,
+            start_day=start_date,
             context=context
         ):
             assert prefix == 'v1/customer/cust-ac/s1/20240316/observation/'
@@ -347,8 +348,9 @@ def test_get_events_from_prefix_no_limit(mocker):
                                                random.randint(0, 59), random.randint(1, 999999))}
     ]
 
-    to_be_returned = [['f3-1', 'f3-2'], ['f4-1', 'f4-2'], ['f5-1', 'f5-2'], ['f6-1', 'f6-2'], ['f7-1', 'f7-2'], ['f8-1', 'f8-2']]
-    expected = [['f3-1', 'f3-2'], ['f4-1', 'f4-2'], ['f5-1', 'f5-2'], ['f6-1', 'f6-2'], ['f7-1', 'f7-2'], ['f8-1', 'f8-2']]
+    to_be_returned = [['f3-1', 'f3-2'], ['f4-1', 'f4-2'], ['f5-1', 'f5-2'],
+                      ['f6-1', 'f6-2'], ['f7-1', 'f7-2'], ['f8-1', 'f8-2'], ['f9-1', 'f9-2']]
+    expected = [['f3-1', 'f3-2'], ['f4-1', 'f4-2'], ['f5-1', 'f5-2'], ['f6-1', 'f6-2'], ['f7-1', 'f7-2'], ['f8-1', 'f8-2'], ['f9-1', 'f9-2']]
     limit = 0
 
     mock_fetch_file_objects = mocker.patch('fnc.metastream.s3_client._S3Client.fetch_file_objects', return_value=objs)
@@ -389,7 +391,7 @@ def test_get_events_from_prefix_no_limit(mocker):
     assert len(c.args) == 1
     assert c.args[0] == f'{prefix}v1/'
 
-    expected = ['f3', 'f4', 'f5', 'f6', 'f7', 'f8']
+    expected = ['f3', 'f4', 'f5', 'f6', 'f7', 'f8', 'f9']
     i = 0
     for c in mock_fetch_gzipped_json_lines_file.call_args_list:
         assert len(c.args) == 1
@@ -397,7 +399,7 @@ def test_get_events_from_prefix_no_limit(mocker):
         i += 1
 
     assert spy_fetch_file_objects.call_count == 1
-    assert spy_fetch_gzipped_json_lines_file.call_count == 6
+    assert spy_fetch_gzipped_json_lines_file.call_count == 7
 
 
 def test_get_events_from_prefix_under_limit_partial_file(mocker):
@@ -698,6 +700,7 @@ def test_fetch_events(mocker):
     # This method is the one that guaranty that no more than limit events are returned
     # Since this method is mocked we do not check the amount of events returned in this test.
     # That check is tested in the test_get_events_from_prefix test method
+    expected_end_day = datetime.now(tz=timezone.utc).replace(microsecond=0) - timedelta(seconds=1)
     limit = random.randint(0, 10)
     i = 0
     for events in client.fetch_events(event_type=event_type, limit=limit, start_date=start_date, context=context):
@@ -709,7 +712,7 @@ def test_fetch_events(mocker):
     for c in mock_get_prefixes.call_args_list:
         assert c.kwargs is not None
         assert event_type == c.kwargs.get('event_type', '')
-        assert 'exact_day' in c.kwargs and c.kwargs.get('exact_day') is False
+        assert 'end_day' in c.kwargs and c.kwargs.get('end_day') - expected_end_day < timedelta(seconds=1)
         assert 'start_day' in c.kwargs and start_date.date() == c.kwargs.get('start_day').date()
 
     assert mock_get_events_from_prefix.call_count == 5
@@ -847,7 +850,7 @@ def test_fetch_events_by_day(mocker):
     for c in mock_get_prefixes.call_args_list:
         assert c.kwargs is not None
         assert event_type == c.kwargs.get('event_type', '')
-        assert 'exact_day' in c.kwargs and c.kwargs.get('exact_day') is True
+        assert 'end_day' not in c.kwargs
         assert 'start_day' in c.kwargs and start_date.date() == c.kwargs.get('start_day').date()
 
     assert mock_get_events_from_prefix.call_count == 5

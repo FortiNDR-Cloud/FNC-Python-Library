@@ -167,10 +167,8 @@ class FncMetastreamClient:
         for obj in s3.fetch_file_objects(f'{prefix}v1/'):
             obj_time = obj.get('LastModified').time()
 
-            if start_date:
-                start_time = start_date.time()
-                if start_time > obj_time:
-                    continue
+            if start_date and start_date > obj.get('LastModified'):
+                continue
 
             if end_date:
                 end_time = end_date.time()
