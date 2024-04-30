@@ -6,7 +6,6 @@ from ..errors import ErrorMessages, ErrorType, FncClientError
 from ..global_variables import *
 from ..logger import BasicLogger, FncClientLogger
 from ..utils import *
-# from .auth_client import Auth
 from .s3_client import MetastreamContext, S3Client
 
 
