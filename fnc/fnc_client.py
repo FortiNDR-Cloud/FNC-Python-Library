@@ -26,4 +26,4 @@ class FncClient:
         bucket: str = None,
         logger: FncClientLogger = None
     ) -> FncMetastreamClient:
-        return FncMetastreamClient(name=name, account_code=account_code, access_key=access_key, secret_key=secret_key, bucket=bucket)
+        return FncMetastreamClient(name=name, account_code=account_code, access_key=access_key, secret_key=secret_key, bucket=bucket, logger=logger)
