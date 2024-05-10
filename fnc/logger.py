@@ -47,8 +47,9 @@ class BasicLogger(FncClientLogger):
         logging.info('Logging Initialized')
 
     def set_level(self, level):
-        self.level = level
-        self.logger.setLevel(level)
+        if self.level != level:
+            self.level = level
+            self.logger.setLevel(level)
 
     def set_log_to_file(self, enable: bool = False):
         if not self.logger:
