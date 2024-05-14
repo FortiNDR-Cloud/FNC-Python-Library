@@ -4,11 +4,12 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from fnc import FncClient
-from fnc.global_variables import *
+from fnc.errors import ErrorType, FncClientError
+from fnc.global_variables import METASTREAM_DEFAULT_BUCKET, METASTREAM_SUPPORTED_EVENT_TYPES
 # from fnc.metastream import fetch_events, fetch_events_by_day
-from fnc.metastream.metastream_client import *
-from fnc.metastream.s3_client import MetastreamContext
-from tests.utils import *
+from fnc.metastream.metastream_client import FncMetastreamClient
+from fnc.metastream.s3_client import MetastreamContext, S3Client
+from tests.utils import get_random_string
 
 
 def test_get_metastream_client_as_singleton(mocker):

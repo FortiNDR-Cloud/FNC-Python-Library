@@ -1,6 +1,7 @@
 
 import copy
 import logging
+import random
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -10,10 +11,13 @@ from fnc.api.api_client import ApiContext, DetectionApi, EntityApi, FncApiClient
 from fnc.api.endpoints import EndpointKey
 from fnc.errors import ErrorMessages, ErrorType, FncClientError
 from fnc.fnc_client import FncClient
-from fnc.global_variables import *
+from fnc.global_variables import (CLIENT_DEFAULT_DOMAIN, DEFAULT_DATE_FORMAT, POLLING_MAX_DETECTION_EVENTS, REQUEST_DEFAULT_TIMEOUT,
+                                  REQUEST_DEFAULT_VERIFY, REQUEST_MAXIMUM_RETRY_ATTEMPT)
 from fnc.utils import datetime_to_utc_str, str_to_utc_datetime
 from tests.api.mocks import MockApi, MockEndpoint, MockRestClient
-from tests.utils import *
+from tests.utils import (deep_diff, get_empty_detection_events_response, get_empty_detections_response, get_fake_detection_events_response,
+                         get_fake_detections_response, get_fetch_dhcp_response, get_fetch_pdns_response, get_random_endpoint_keys,
+                         get_random_string)
 
 
 def test_get_api_client_as_singleton(mocker):

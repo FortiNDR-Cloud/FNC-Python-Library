@@ -4,7 +4,7 @@ import string
 from datetime import datetime, timedelta, timezone
 
 from fnc.api.endpoints import EndpointKey
-from fnc.global_variables import *
+from fnc.global_variables import METASTREAM_SUPPORTED_EVENT_TYPES
 from fnc.utils import datetime_to_utc_str
 
 
