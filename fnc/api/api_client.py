@@ -802,7 +802,7 @@ class FncApiClient:
                         fetch_pdns=fetch_pdns,
                         filter_training=filter_training
                     )
-                    entities_info.update({entity, entity_info})
+                    entities_info[entity] = entity_info
                 else:
                     self.logger.debug(f"Scaping {entity} since it was already requested.")
 
