@@ -48,4 +48,4 @@ DEFAULT_DATE_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 METASTREAM_DEFAULT_BUCKET = "fortindr-cloud-metastream"
 METASTREAM_SUPPORTED_EVENT_TYPES = ['suricata', 'observation']
-METASTREAM_MAX_CHUNK_SIZE = 500 * 1024 * 1024  # Set Maximum size of the decompressed file stored in memory to 500 MB
+METASTREAM_MAX_CHUNK_SIZE = 100 * 1024 * 1024  # Set Maximum size of the decompressed file stored in memory to 500 MB
