@@ -418,14 +418,14 @@ def test_get_events_from_prefix_no_limit(mocker):
                                                random.randint(0, 59), random.randint(1, 999999))}
     ]
 
-    to_be_returned = [['f3-1', 'f3-2'], ['f4-1', 'f4-2'], ['f5-1', 'f5-2'],
-                      ['f6-1', 'f6-2'], ['f7-1', 'f7-2'], ['f8-1', 'f8-2'], ['f9-1', 'f9-2']]
+    to_be_returned = {'f3': ['f3-1', 'f3-2'], 'f4': ['f4-1', 'f4-2'], 'f5': ['f5-1', 'f5-2'],
+                      'f6': ['f6-1', 'f6-2'], 'f7': ['f7-1', 'f7-2'], 'f8': ['f8-1', 'f8-2'], 'f9': ['f9-1', 'f9-2']}
     expected = [['f3-1', 'f3-2'], ['f4-1', 'f4-2'], ['f5-1', 'f5-2'], ['f6-1', 'f6-2'], ['f7-1', 'f7-2'], ['f8-1', 'f8-2'], ['f9-1', 'f9-2']]
     limit = 0
 
     mock_fetch_file_objects = mocker.patch('fnc.metastream.s3_client._S3Client.fetch_file_objects', return_value=objs)
     mock_fetch_gzipped_json_lines_file = mocker.patch(
-        'fnc.metastream.s3_client._S3Client.fetch_gzipped_json_lines_file', side_effect=to_be_returned)
+        'fnc.metastream.s3_client._S3Client.fetch_gzipped_json_lines_file', side_effect=(lambda v: [to_be_returned.get(v)]))
 
     start_date = datetime(2024, 3, 19, 0, 0, 0, 000000)
     end_date = datetime(2024, 3, 20, 23, 59, 59, 999999)
@@ -496,12 +496,12 @@ def test_get_events_from_prefix_under_limit_partial_file(mocker):
                                                random.randint(0, 59), random.randint(1, 999999))}
     ]
 
-    to_be_returned = [['f3-1', 'f3-2'], ['f4-1', 'f4-2'], ['f5-1', 'f5-2']]
+    to_be_returned = {'f3': ['f3-1', 'f3-2'], 'f4': ['f4-1', 'f4-2'], 'f5': ['f5-1', 'f5-2']}
     expected = [['f3-1', 'f3-2'], ['f4-1', 'f4-2'], ['f5-1']]
 
     mock_fetch_file_objects = mocker.patch('fnc.metastream.s3_client._S3Client.fetch_file_objects', return_value=objs)
     mock_fetch_gzipped_json_lines_file = mocker.patch(
-        'fnc.metastream.s3_client._S3Client.fetch_gzipped_json_lines_file', side_effect=to_be_returned)
+        'fnc.metastream.s3_client._S3Client.fetch_gzipped_json_lines_file', side_effect=(lambda v: [to_be_returned.get(v)]))
 
     start_date = datetime(2024, 3, 19, 0, 0, 0, 000000)
     end_date = datetime(2024, 3, 20, 23, 59, 59, 999999)
@@ -572,12 +572,12 @@ def test_get_events_from_prefix_under_limit_whole_file(mocker):
                                                random.randint(0, 59), random.randint(1, 999999))}
     ]
 
-    to_be_returned = [['f3-1', 'f3-2'], ['f4-1', 'f4-2'], ['f5-1', 'f5-2']]
+    to_be_returned = {'f3': ['f3-1', 'f3-2'], 'f4': ['f4-1', 'f4-2'], 'f5': ['f5-1', 'f5-2']}
     expected = [['f3-1', 'f3-2'], ['f4-1', 'f4-2'], ['f5-1', 'f5-2']]
 
     mock_fetch_file_objects = mocker.patch('fnc.metastream.s3_client._S3Client.fetch_file_objects', return_value=objs)
     mock_fetch_gzipped_json_lines_file = mocker.patch(
-        'fnc.metastream.s3_client._S3Client.fetch_gzipped_json_lines_file', side_effect=to_be_returned)
+        'fnc.metastream.s3_client._S3Client.fetch_gzipped_json_lines_file', side_effect=(lambda v: [to_be_returned.get(v)]))
 
     start_date = datetime(2024, 3, 19, 0, 0, 0, 000000)
     end_date = datetime(2024, 3, 20, 23, 59, 59, 999999)

@@ -148,7 +148,7 @@ class _S3Client:
             for item in contents:
                 yield item
 
-    def fetch_gzipped_json_lines_file(self, key: str) -> List[dict]:
+    def fetch_gzipped_json_lines_file(self, key: str) -> Iterator[List]:
         """
         Downloads a gzipped file of `JSON Lines` format and converts it to Python.
 
