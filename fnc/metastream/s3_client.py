@@ -8,7 +8,7 @@ import boto3
 import botocore.client
 import botocore.config
 
-from fnc.global_variables import METASTREAM_SUPPORTED_EVENT_TYPES
+from fnc.global_variables import METASTREAM_MAX_CHUNK_SIZE, METASTREAM_SUPPORTED_EVENT_TYPES
 
 
 class MetastreamContext:
@@ -163,7 +163,7 @@ class _S3Client:
             for row in f:
                 rows.append(json.loads(row))
                 total_size += sys.getsizeof(row)
-                if total_size >= 500*1024:
+                if total_size >= METASTREAM_MAX_CHUNK_SIZE:
                     yield rows
                     rows = []
                     total_size = 0
