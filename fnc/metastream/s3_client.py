@@ -1,6 +1,7 @@
 import gzip
 import io
 import json
+import sys
 from typing import Iterator, List
 
 import boto3
@@ -154,9 +155,17 @@ class _S3Client:
         :param key: s3 key to a gzipped JSON Lines file
         :returns Contents of the file converted to Python
         """
-        self.context.file_downloads_incr()
-        datagz = io.BytesIO()
-        self.client.download_fileobj(
-            Bucket=self.bucket, Key=key, Fileobj=datagz)
-        data = gzip.decompress(datagz.getvalue())
-        return [json.loads(line) for line in data.splitlines(False)]
+        s3_object = self.client.get_object(
+            Bucket=self.bucket, Key=key)['Body']
+        rows = []
+        total_size = 0
+        with gzip.open(s3_object, "r") as f:
+            for row in f:
+                rows.append(json.loads(row))
+                total_size += sys.getsizeof(row)
+                if total_size >= 500*1024:
+                    yield rows
+                    rows = []
+                    total_size = 0
+            if rows:
+                yield rows
