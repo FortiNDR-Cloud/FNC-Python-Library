@@ -547,11 +547,13 @@ class GetTasks(Endpoint):
 
     def get_query_args(self) -> dict:
         return {
-            'account_uuid':   ArgumentDefinition(required=False, multiple=False),
-            'account_code': ArgumentDefinition(required=False, multiple=False),
+            'created_start':   ArgumentDefinition(required=False, multiple=False),
+            'created_end': ArgumentDefinition(required=False, multiple=False),
             'sensor_id':    ArgumentDefinition(required=False, multiple=False),
-            'include':      ArgumentDefinition(required=False, multiple=True),
-            'enabled':      ArgumentDefinition(required=False, multiple=False),
+            'search_text':      ArgumentDefinition(required=False, multiple=False),
+            'has_files_only':      ArgumentDefinition(required=False, multiple=False),
+            'page_size':      ArgumentDefinition(required=False, multiple=False),
+            'page_num':      ArgumentDefinition(required=False, multiple=False),
         }
 
     def get_response_fields(self) -> list[str]:
@@ -634,6 +636,7 @@ class GetTelemetryPacketstats(Endpoint):
     def get_query_args(self) -> dict:
         return {
             'sensor_id':   ArgumentDefinition(required=False, multiple=False),
+            'account_code':   ArgumentDefinition(required=False, multiple=False),
             'start_date': ArgumentDefinition(required=False, multiple=False),
             'end_date':    ArgumentDefinition(required=False, multiple=False),
             'interval':      ArgumentDefinition(required=False, multiple=False),
@@ -836,6 +839,12 @@ class GetDetections(Endpoint):
             'resolution_user_uuid':         ArgumentDefinition(required=False, multiple=True),
             'has_resolution_user_uuid':     ArgumentDefinition(required=False, multiple=False),
             'is_muted':                     ArgumentDefinition(required=False, multiple=False),
+            'rule_severity':                ArgumentDefinition(required=False, multiple=True, allowed=['low', 'moderate', 'high']),
+            'rule_category':                ArgumentDefinition(required=False, multiple=True),
+            'rule_confidence':              ArgumentDefinition(required=False, multiple=True, allowed=['low', 'moderate', 'high']),
+            'rule_enabled':                 ArgumentDefinition(required=False, multiple=False),
+            'rule_attack_id':               ArgumentDefinition(required=False, multiple=True),
+            'rule_account_uuid':            ArgumentDefinition(required=False, multiple=False),
         }
 
     def get_response_fields(self) -> list[str]:

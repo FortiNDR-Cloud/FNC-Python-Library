@@ -67,8 +67,11 @@ class FncMetastreamClient:
         self.get_logger().debug("Validating metastream events fetch request's arguments.")
 
         failed = []
-        if not all(e in METASTREAM_SUPPORTED_EVENT_TYPES for e in event_types):
+        if not event_types or not all(e in METASTREAM_SUPPORTED_EVENT_TYPES for e in event_types):
             failed.append(f'Invalid event types. The event_types must be of the following: {", ".join(METASTREAM_SUPPORTED_EVENT_TYPES)}')
+
+        if not start_date:
+            failed.append("The start_date for the search window must be provided.")
 
         if not end_date:
             d = start_date.date() if isinstance(start_date, datetime) else start_date
