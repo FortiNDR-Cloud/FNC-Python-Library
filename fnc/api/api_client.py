@@ -841,19 +841,22 @@ class FncApiClient:
         }
 
         response = {}
-        while 'events' not in response or response['events']:
+        while 'events' not in response or len(response['events']) == POLLING_MAX_DETECTION_EVENTS:
             try:
                 response = self.call_endpoint(
                     endpoint=EndpointKey.GET_DETECTION_EVENTS, args=args.copy())
                 args['offset'] = args.get(
                     'offset', 0) + POLLING_MAX_DETECTION_EVENTS
                 detection_events.extend(response['events'])
+            except FncClientError as e:
+                self.logger.error(
+                    f"A failure occurs while retrieving detection's associated events for detection {detection_id}.")
+                raise e
+            finally:
                 count = len(detection_events)
                 if count:
                     self.logger.debug(
-                        f"{count} Detection's associated events successfully retrieved for detection {detection_id}.")
-            except FncClientError as e:
-                raise e
+                        f"{count} Detection's associated events were retrieved for detection {detection_id}.")
         return detection_events
 
     def _get_detections(self, args: dict) -> dict:
