@@ -1,18 +1,41 @@
 import gzip
 import io
 import json
-from typing import List
+import sys
+from typing import Iterator, List
 
 import boto3
 import botocore.client
 import botocore.config
 
+from fnc.global_variables import METASTREAM_MAX_CHUNK_SIZE, METASTREAM_SUPPORTED_EVENT_TYPES
 
-class Context:
+
+class MetastreamContext:
     def __init__(self):
+        self._checkpoint = ''
+        self._history = {}
         self.file_downloads = 0
         self.api_calls = 0
-        self.checkpoint = None
+
+    def update_history(self, event_type: str = None, history: dict = None):
+        if not event_type:
+            for event_type in METASTREAM_SUPPORTED_EVENT_TYPES:
+                self.update_history(event_type=event_type, history=history)
+        elif history:
+            self._history[event_type] = history.copy()
+
+    def get_history(self, event_type: str = None):
+        if not event_type or event_type not in self._history:
+            return None
+
+        return self._history.get(event_type)
+
+    def update_checkpoint(self, checkpoint: str):
+        self._checkpoint = checkpoint
+
+    def get_checkpoint(self):
+        return self._checkpoint
 
     def file_downloads_incr(self):
         self.file_downloads += 1
@@ -23,7 +46,7 @@ class Context:
 
 class S3Client:
     def __init__(self, bucket: str, access_key: str, secret_key: str, user_agent_extra: str, client: botocore.client.BaseClient = None,
-                 context: Context = None):
+                 context: MetastreamContext = None):
         """
         S3Client provides a context manager for _S3Client.  Provides higher level methods for S3.
 
@@ -55,9 +78,9 @@ class S3Client:
 class _S3Client:
     S3_MAX_KEYS = 1000
 
-    def __init__(self, bucket: str, access_key: str, secret_key: str, user_agent_extra: str, client, context: Context):
+    def __init__(self, bucket: str, access_key: str, secret_key: str, user_agent_extra: str, client, context: MetastreamContext):
         self.bucket = bucket
-        self.context = context or Context()
+        self.context = context or MetastreamContext()
         if client is not None:
             self.client = client
         else:
@@ -65,7 +88,7 @@ class _S3Client:
             self.client = boto3.client(
                 's3', aws_access_key_id=access_key, aws_secret_access_key=secret_key, config=config)
 
-    def fetch_common_prefixes(self, prefix: str) -> List[str]:
+    def fetch_common_prefixes(self, prefix: str) -> Iterator[List[str]]:
         """
         A generator function that yields common prefix found after the given prefix.
 
@@ -97,7 +120,7 @@ class _S3Client:
             for prefix in common_prefixes:
                 yield prefix.get('Prefix')
 
-    def fetch_file_objects(self, prefix: str) -> List:
+    def fetch_file_objects(self, prefix: str) -> Iterator[List]:
         """
         A generator method that yields file objects found after the given key prefix.
 
@@ -125,16 +148,24 @@ class _S3Client:
             for item in contents:
                 yield item
 
-    def fetch_gzipped_json_lines_file(self, key: str) -> List[dict]:
+    def fetch_gzipped_json_lines_file(self, key: str) -> Iterator[List]:
         """
         Downloads a gzipped file of `JSON Lines` format and converts it to Python.
 
         :param key: s3 key to a gzipped JSON Lines file
         :returns Contents of the file converted to Python
         """
-        self.context.file_downloads_incr()
-        datagz = io.BytesIO()
-        self.client.download_fileobj(
-            Bucket=self.bucket, Key=key, Fileobj=datagz)
-        data = gzip.decompress(datagz.getvalue())
-        return [json.loads(line) for line in data.splitlines(False)]
+        s3_object = self.client.get_object(
+            Bucket=self.bucket, Key=key)['Body']
+        rows = []
+        total_size = 0
+        with gzip.open(s3_object, "r") as f:
+            for row in f:
+                rows.append(json.loads(row))
+                total_size += sys.getsizeof(row)
+                if total_size >= METASTREAM_MAX_CHUNK_SIZE:
+                    yield rows
+                    rows = []
+                    total_size = 0
+            if rows:
+                yield rows

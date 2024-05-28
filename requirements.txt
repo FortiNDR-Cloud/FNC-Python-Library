@@ -1,0 +1,7 @@
+requests==2.31.0
+pytest
+pytest-mock
+requests-mock
+dateparser
+boto3
+
