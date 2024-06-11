@@ -143,10 +143,8 @@ class FncApiClient:
             if self.domain.startswith('-uat'):
                 # To allow use of uat environment
                 url = f"{self.protocol}://{api_name}{self.domain}/{endpoint}"
-            elif self.domain == CLIENT_DEFAULT_DOMAIN:
-                url = f"{self.protocol}://{api_name}.{self.domain}/{endpoint}"
             else:
-                url = f"{self.protocol}://{api_name}-api.{self.domain}/{endpoint}"
+                url = f"{self.protocol}://{api_name}.{self.domain}/{endpoint}"
 
             full_url = ""
 
@@ -923,7 +921,7 @@ class FncApiClient:
                 # Request detections
                 response = self._get_detections(polling_args.copy())
 
-                if len(response['detections']) > 0:
+                if 'detections' in response and len(response['detections']) > 0:
                     # Process the response enriching it if requested
                     entities_info = self._process_response(response=response, entities_info=entities_info, args=args)
 
