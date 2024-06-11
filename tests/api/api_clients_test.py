@@ -130,7 +130,7 @@ def test_get_url_succeed(mocker):
 
         endpoint_url = endpoint_url.format(**url_args)
         expected_default_url = f'https://{api._api_name}.{default_domain}/{endpoint_url}'
-        expected_url = f'https://{api._api_name}-api.{domain}/{endpoint_url}'
+        expected_url = f'https://{api._api_name}.{domain}/{endpoint_url}'
         assert client_with_default.get_url(e=endpoint, api=api,
                                            url_args=url_args) == expected_default_url
         assert client_with_fake.get_url(e=endpoint, api=api,
@@ -1543,7 +1543,6 @@ def test_continuous_polling_including_all(mocker):
                                       copy.deepcopy(get_fetch_pdns_response(count=1)),
                                       copy.deepcopy(get_fetch_dhcp_response(count=1)),
                                       copy.deepcopy(detections_event_response),
-                                      copy.deepcopy(get_empty_detection_events_response()),
                                       copy.deepcopy(get_empty_detections_response())])
 
     mock_validate_token = mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
@@ -1577,17 +1576,16 @@ def test_continuous_polling_including_all(mocker):
             # Detections can only be returned twice in this test. The first time with one detection and the second one with none.
             assert False
 
-    assert mock_call_endpoint.call_count == 6
+    assert mock_call_endpoint.call_count == 5
 
     i = 0
     expected_endpoints = [EndpointKey.GET_DETECTIONS, EndpointKey.GET_ENTITY_PDNS, EndpointKey.GET_ENTITY_DHCP,
-                          EndpointKey.GET_DETECTION_EVENTS, EndpointKey.GET_DETECTION_EVENTS, EndpointKey.GET_DETECTIONS]
+                          EndpointKey.GET_DETECTION_EVENTS, EndpointKey.GET_DETECTIONS]
     expected_args = [
         {'offset': 0, 'status': polling_args.get('status'), 'sort_by': 'device_ip', 'sort_order': 'asc', 'include': 'rules, indicators'},
         {'entity': fake_detection['device_ip']},
         {'entity': fake_detection['device_ip']},
         {'detection_uuid': fake_detection['uuid'], 'offset': 0},
-        {'detection_uuid': fake_detection['uuid'], 'offset': POLLING_MAX_DETECTION_EVENTS},
         {'offset': 1, 'status': polling_args.get(
             'status'), 'sort_by': 'device_ip', 'sort_order': 'asc', 'include': 'rules, indicators'}
     ]
