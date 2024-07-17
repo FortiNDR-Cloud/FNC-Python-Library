@@ -49,6 +49,7 @@ class EndpointKey (EndpointEnum):
     GET_ENTITY_PDNS = auto()
     GET_ENTITY_DHCP = auto()
     GET_ENTITY_FILE = auto()
+    GET_ENTITY_VIRUS_TOTAL = auto()
 
 
 class Endpoint:
@@ -704,6 +705,30 @@ class GetEntitySummary(Endpoint):
 
     def get_response_fields(self) -> list[str]:
         return ['summary']
+
+
+class GetEntityVirusTotal(Endpoint):
+    version: str = 'v1'
+    endpoint: str = 'entity/{entity}/vt'
+
+    default_values: dict = {}
+
+    def get_endpoint_key(self) -> EndpointKey:
+        return EndpointKey.GET_ENTITY_VIRUS_TOTAL
+
+    def get_control_args(self) -> dict:
+        return {
+            'method': 'GET'
+        }
+
+    def get_url_args(self) -> list:
+        return ['entity']
+
+    def get_query_args(self) -> dict:
+        return {}
+
+    def get_response_fields(self) -> list[str]:
+        return ['vt_response']
 
 
 class GetEntityPdns(Endpoint):
