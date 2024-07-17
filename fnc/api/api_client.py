@@ -483,7 +483,6 @@ class FncApiClient:
         polling_delay: int = None,
         checkpoint: str = None
     ) -> tuple[datetime, datetime]:
-
         # We try to get the start_date from the arguments or the checkpoint.
         # If none of them is provided we use the utc now - delay
         start_date_str = checkpoint or start_date_str or ""
@@ -492,7 +491,8 @@ class FncApiClient:
         polling_delay = polling_delay or POLLING_DEFAULT_DELAY
 
         now = datetime.now(tz=timezone.utc)
-        end_date = now - timedelta(minutes=polling_delay)
+        minutes: int = int(polling_delay)
+        end_date = now - timedelta(minutes=minutes)
         start_date = end_date
 
         sd = None
@@ -579,7 +579,7 @@ class FncApiClient:
                 if 'offset' not in polling_args or polling_args['offset'] < 0:
                     polling_args['offset'] = 0
                 self.logger.info(
-                    "Using arguments received in the context.\n" +
+                    "Using arguments received in the context. " +
                     "If this is not the expected behavior, ensure the context's args are cleared before polling."
                 )
                 return polling_args
@@ -611,24 +611,30 @@ class FncApiClient:
             polling_args['account_uuid'] = args['account_uuid'],
 
         muted_rules = str(args.get('pull_muted_rules',
-                          polling_args['muted_rule'])).lower()
+                          polling_args['muted_rule'])).strip().lower()
         if muted_rules == 'all':
-            polling_args.pop('muted_rule')
+            polling_args.pop('muted_rule', None)
         else:
+            if muted_rules in ['muted', 'unmuted']:
+                muted_rules = 'true' if muted_rules == 'muted' else 'false'
             polling_args['muted_rule'] = muted_rules
 
         muted_devices = str(args.get('pull_muted_devices',
-                            polling_args['muted_device'])).lower()
+                            polling_args['muted_device'])).strip().lower()
         if muted_devices == 'all':
-            polling_args.pop('muted_device')
+            polling_args.pop('muted_device', None)
         else:
+            if muted_devices in ['muted', 'unmuted']:
+                muted_devices = 'true' if muted_devices == 'muted' else 'false'
             polling_args['muted_device'] = muted_devices
 
         muted = str(args.get('pull_muted_detections',
-                    polling_args['muted'])).lower()
+                    polling_args['muted'])).strip().lower()
         if muted == 'all':
-            polling_args.pop('muted')
+            polling_args.pop('muted', None)
         else:
+            if muted in ['muted', 'unmuted']:
+                muted = 'true' if muted == 'muted' else 'false'
             polling_args['muted'] = muted
 
         status = str(args.get('status', polling_args['status'])).lower()
@@ -745,15 +751,24 @@ class FncApiClient:
 
         return result
 
+    def _get_as_bool(self, value):
+        if type(value) is str and value.title() in ['True', 'False']:
+            return eval(value.title())
+
+        if type(value) is bool:
+            return value
+
+        return False
+
     def _process_response(self, response: dict, entities_info: dict = None, args: dict = None) -> dict:
         # Getting instructions from the arguments
         args = args or {}
-        include_description = args.get('include_description', False)
-        include_signature = args.get('include_signature', False)
-        fetch_pdns = args.get('include_pdns', False)
-        fetch_dhcp = args.get('include_dhcp', False)
-        include_events = args.get('include_events', False)
-        filter_training = args.get('filter_training_detections', True)
+        include_description = self._get_as_bool(args.get('include_description'))
+        include_signature = self._get_as_bool(args.get('include_signature'))
+        fetch_pdns = self._get_as_bool(args.get('include_pdns'))
+        fetch_dhcp = self._get_as_bool(args.get('include_dhcp'))
+        include_events = self._get_as_bool(args.get('include_events'))
+        filter_training = self._get_as_bool(args.get('filter_training_detections'))
 
         detection_events = {}
 
@@ -817,8 +832,7 @@ class FncApiClient:
             for detection in response['detections']:
                 total += 1
                 try:
-                    detection_events[detection['uuid']] = self._get_detection_events(
-                        detection['uuid'])
+                    detection_events.update({detection['uuid']: self._get_detection_events(detection['uuid'])})
                 except FncClientError as e:
                     failed += 1
                     # If the request for associated events fails for a particular detection, we log it but continue with the execution.
@@ -827,7 +841,7 @@ class FncApiClient:
 
             self.logger.info(f"Associated events for ({total - failed} out of {total}) detections were successfully added to the response.")
 
-        response['events'] = detection_events
+        response.update({'events': detection_events})
         return entities_info
 
     def _get_detection_events(self, detection_id: str) -> list:
@@ -1055,9 +1069,9 @@ class FncApiClient:
         args['end_date'] = end_date_str
 
         # Required to check if enrichment is needed
-        fetch_pdns = args.get('include_pdns', False)
-        fetch_dhcp = args.get('include_dhcp', False)
-        include_events = args.get('include_events', False)
+        fetch_pdns = self._get_as_bool(args.get('include_pdns'))
+        fetch_dhcp = self._get_as_bool(args.get('include_dhcp'))
+        include_events = self._get_as_bool(args.get('include_events'))
         limit = 0
 
         # Start delta as the lesser of 1 day and the entire history time window
@@ -1078,9 +1092,9 @@ class FncApiClient:
             self.get_logger().debug("Enrichment is not required or the interval is to short. The limit will be ignored.")
             delta = None
             ed = end_date
-            args.pop('limit')
+            args.pop('limit', None)
 
-        # We pull detections one day at a time until we the limit is reached
+        # We pull detections one day at a time until the limit is reached
         # If the limit is overpassed in the first piece of 1 day, we start
         # dividing the delta by 2 until we do not overpass the limit or delta
         # is less than 1 hour. At this moment, we pull everything regardless the
@@ -1096,7 +1110,7 @@ class FncApiClient:
                     context.clear_args()
                     args['end_date'] = datetime_to_utc_str(ed)
 
-                    self.get_logger().info(f"Polling history from {context.get_checkpoint()} to {args['end_date']})")
+                    self.get_logger().info("Polling next piece of the historical data.")
                     count = 0
                     for detections in self.continuous_polling(context=context, args=args):
                         # we pull detections for the current piece and update the limit appropriately

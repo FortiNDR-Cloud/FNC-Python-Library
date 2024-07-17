@@ -54,6 +54,7 @@ class FncClient:
     ) -> FncMetastreamClient:
         if logger:
             logger.debug("Getting the Metastream Client")
+
         mask = hash(f"{account_code}-{access_key}-{secret_key}-{bucket}")
         if logger:
             logger.debug(f"Looking if there is already a client for hash= {mask}.")
