@@ -8,7 +8,10 @@ import boto3
 import botocore.client
 import botocore.config
 
-from fnc.global_variables import METASTREAM_MAX_CHUNK_SIZE, METASTREAM_SUPPORTED_EVENT_TYPES
+from fnc.global_variables import (
+    METASTREAM_MAX_CHUNK_SIZE,
+    METASTREAM_SUPPORTED_EVENT_TYPES,
+)
 
 
 class MetastreamContext:
@@ -18,15 +21,23 @@ class MetastreamContext:
         self.file_downloads = 0
         self.api_calls = 0
 
+    def _is_full_history(self, history: dict = None):
+        return any([i in history for i in METASTREAM_SUPPORTED_EVENT_TYPES])
+
     def update_history(self, event_type: str = None, history: dict = None):
-        if not event_type:
+        if self._is_full_history(history=history):
+            self._history = history
+        elif not event_type:
             for event_type in METASTREAM_SUPPORTED_EVENT_TYPES:
                 self.update_history(event_type=event_type, history=history)
         elif history:
             self._history[event_type] = history.copy()
 
     def get_history(self, event_type: str = None):
-        if not event_type or event_type not in self._history:
+        if not event_type:
+            return self._history
+
+        elif event_type not in self._history:
             return None
 
         return self._history.get(event_type)
