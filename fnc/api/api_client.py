@@ -5,11 +5,30 @@ from typing import Any, Iterator, List
 
 from requests.exceptions import *
 
-from fnc.api.endpoints import DetectionApi, Endpoint, EndpointKey, EntityApi, FncApi, SensorApi
-from fnc.global_variables import (CLIENT_DEFAULT_DOMAIN, CLIENT_DEFAULT_USER_AGENT, CLIENT_NAME, CLIENT_PROTOCOL, CLIENT_VERSION,
-                                  DEFAULT_DATE_FORMAT, POLLING_DEFAULT_DELAY, POLLING_MAX_DETECTION_EVENTS, POLLING_MAX_DETECTIONS,
-                                  POLLING_TRAINING_ACCOUNT_ID, POLLING_TRAINING_CUSTOMER_ID, REQUEST_DEFAULT_TIMEOUT, REQUEST_DEFAULT_VERIFY,
-                                  REQUEST_MAXIMUM_RETRY_ATTEMPT)
+from fnc.api.endpoints import (
+    DetectionApi,
+    Endpoint,
+    EndpointKey,
+    EntityApi,
+    FncApi,
+    SensorApi,
+)
+from fnc.global_variables import (
+    CLIENT_DEFAULT_DOMAIN,
+    CLIENT_DEFAULT_USER_AGENT,
+    CLIENT_NAME,
+    CLIENT_PROTOCOL,
+    CLIENT_VERSION,
+    DEFAULT_DATE_FORMAT,
+    POLLING_DEFAULT_DELAY,
+    POLLING_MAX_DETECTION_EVENTS,
+    POLLING_MAX_DETECTIONS,
+    POLLING_TRAINING_ACCOUNT_ID,
+    POLLING_TRAINING_CUSTOMER_ID,
+    REQUEST_DEFAULT_TIMEOUT,
+    REQUEST_DEFAULT_VERIFY,
+    REQUEST_MAXIMUM_RETRY_ATTEMPT,
+)
 from fnc.utils import datetime_to_utc_str, str_to_utc_datetime
 
 from ..errors import ErrorMessages, ErrorType, FncClientError
@@ -703,7 +722,7 @@ class FncApiClient:
         if include_signature:
             detection.update({'rule_signature': rule['query_signature']})
 
-    def _get_entity_information(self, entity: str, fetch_pdns: bool = False, fetch_dhcp: bool = False, filter_training: bool = True) -> dict:
+    def get_entity_information(self, entity: str, fetch_pdns: bool = False, fetch_dhcp: bool = False, filter_training: bool = True) -> dict:
         result: dict = {}
         if not fetch_dhcp and not fetch_pdns:
             return result
@@ -765,10 +784,7 @@ class FncApiClient:
         args = args or {}
         include_description = self._get_as_bool(args.get('include_description'))
         include_signature = self._get_as_bool(args.get('include_signature'))
-        fetch_pdns = self._get_as_bool(args.get('include_pdns'))
-        fetch_dhcp = self._get_as_bool(args.get('include_dhcp'))
         include_events = self._get_as_bool(args.get('include_events'))
-        filter_training = self._get_as_bool(args.get('filter_training_detections'))
 
         detection_events = {}
 
@@ -798,31 +814,6 @@ class FncApiClient:
             )
         self.logger.info(
             "Rules' information successfully added to the detections.")
-
-        # Enrich detection with additional entity's information
-        if fetch_dhcp or fetch_pdns:
-            entities_info = entities_info or {}
-            self.logger.debug(
-                " Enriching detection with additional entity's information.")
-
-            for detection in response['detections']:
-                entity = detection['device_ip']
-                if entity not in entities_info:
-                    # Add the PDNS and DHCP information if requested
-                    entity_info = self._get_entity_information(
-                        entity=entity,
-                        fetch_dhcp=fetch_dhcp,
-                        fetch_pdns=fetch_pdns,
-                        filter_training=filter_training
-                    )
-                    entities_info[entity] = entity_info
-                else:
-                    self.logger.debug(f"Scaping {entity} since it was already requested.")
-
-                detection.update(entities_info.get(entity))
-
-            self.logger.info(
-                "Entity's information successfully added to the detections.")
 
         # Add detection's associated events to the response
         if include_events:
@@ -1068,10 +1059,9 @@ class FncApiClient:
         args['start_date'] = start_date_str
         args['end_date'] = end_date_str
 
-        # Required to check if enrichment is needed
-        fetch_pdns = self._get_as_bool(args.get('include_pdns'))
-        fetch_dhcp = self._get_as_bool(args.get('include_dhcp'))
-        include_events = self._get_as_bool(args.get('include_events'))
+        # Required to check if enrichment is needed. If enrichtment is not needed, no extra API call need to be performed
+        # and we can retrieve all the detections without caring for the limit
+        need_enrichment = self._get_as_bool(args.get('include_events'))
         limit = 0
 
         # Start delta as the lesser of 1 day and the entire history time window
@@ -1081,7 +1071,6 @@ class FncApiClient:
 
         # If delta is less than 1 hour we do not care about the limit and pull the entire interval
         # otherwise get the limit and the end date for the first piece to pull
-        need_enrichment = fetch_pdns or fetch_dhcp or include_events
         if delta > timedelta(hours=1) and need_enrichment:
             previous_checkpoint = start_date_str
 
