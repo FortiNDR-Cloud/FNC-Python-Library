@@ -715,6 +715,9 @@ class FncApiClient:
         detection.update({'rule_severity': rule['severity']})
         detection.update({'rule_confidence': rule['confidence']})
         detection.update({'rule_category': rule['category']})
+        detection.update({'rule_primary_attack_id': rule['primary_attack_id']})
+        detection.update({'rule_secondary_attack_id': rule['secondary_attack_id']})
+        detection.update({'rule_url': f"https://{self.domain}/detections/rules?rule_uuid={rule['uuid']}"})
 
         if include_description:
             detection.update({'rule_description': rule['description']})
