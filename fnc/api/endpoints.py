@@ -1,5 +1,4 @@
 from enum import Enum, auto
-from typing import Union
 
 from requests import Response
 from requests.exceptions import HTTPError, JSONDecodeError

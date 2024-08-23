@@ -1,5 +1,4 @@
 import gzip
-import io
 import json
 import sys
 from typing import Iterator, List

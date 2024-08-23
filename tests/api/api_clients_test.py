@@ -17,24 +17,20 @@ from fnc.api.api_client import (
 from fnc.api.endpoints import EndpointKey
 from fnc.errors import ErrorMessages, ErrorType, FncClientError
 from fnc.fnc_client import FncClient
-from fnc.global_variables import (
+from fnc.global_variables import (  # POLLING_MAX_DETECTION_EVENTS,
     CLIENT_DEFAULT_DOMAIN,
     DEFAULT_DATE_FORMAT,
-    POLLING_MAX_DETECTION_EVENTS,
     REQUEST_DEFAULT_TIMEOUT,
     REQUEST_DEFAULT_VERIFY,
     REQUEST_MAXIMUM_RETRY_ATTEMPT,
 )
 from fnc.utils import datetime_to_utc_str, str_to_utc_datetime
 from tests.api.mocks import MockApi, MockEndpoint, MockRestClient
-from tests.utils import (
+from tests.utils import (  # get_empty_detection_events_response,; get_fetch_dhcp_response,; get_fetch_pdns_response,
     deep_diff,
-    get_empty_detection_events_response,
     get_empty_detections_response,
     get_fake_detection_events_response,
     get_fake_detections_response,
-    get_fetch_dhcp_response,
-    get_fetch_pdns_response,
     get_random_endpoint_keys,
     get_random_string,
 )
@@ -948,24 +944,24 @@ def test_and_validate_get_search_window_succeed(mocker):
 
     now = datetime.now(timezone.utc)
 
-    default_delay = 10
+    # default_delay = 10
     delay = random.randint(11, 50)
 
-    default_date = now - timedelta(minutes=default_delay)
-    default_date_with_delay = now - timedelta(minutes=delay)
+    # default_date = now - timedelta(minutes=default_delay)
+    # default_date_with_delay = now - timedelta(minutes=delay)
 
-    default_start_date = now.replace(hour=0, minute=0, second=0,
-                                     microsecond=0, tzinfo=timezone.utc)
+    # default_start_date = now.replace(hour=0, minute=0, second=0,
+    #                                  microsecond=0, tzinfo=timezone.utc)
 
     start_date = now - timedelta(minutes=random.randint(delay+1, 100))
     start_date_str = datetime_to_utc_str(start_date)
-    default_start_date = default_date
+    # default_start_date = default_date
 
     checkpoint = now - timedelta(minutes=random.randint(delay+1, 100))
     checkpoint_str = datetime_to_utc_str(checkpoint)
 
     end_date = now - timedelta(minutes=delay)
-    default_end_date = default_date
+    # default_end_date = default_date
 
     received_start_date, received_end_date = client._get_and_validate_search_window(
         start_date_str=start_date_str, polling_delay=delay, checkpoint=checkpoint_str)

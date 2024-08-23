@@ -125,9 +125,18 @@ class FncMetastreamClient:
                 exception=e
             ) from e
 
-    def _get_prefixes(self, s3: S3Client, event_type: str, start_day: datetime = None, end_day: datetime = None, context: MetastreamContext = None):
+    def _get_prefixes(
+        self,
+        s3: S3Client,
+        event_type: str,
+        start_day: datetime = None,
+        end_day: datetime = None,
+        context: MetastreamContext = None
+    ):
         if not s3:
-            self.get_logger().warning("Prefixes for the S3 buckets cannot be retrieved due to: The client to connect to AWS S3 bucket was not provided.")
+            self.get_logger().warning(
+                "Prefixes for the S3 buckets cannot be retrieved due to: The client to connect to AWS S3 bucket was not provided."
+            )
             return
 
         if not start_day:

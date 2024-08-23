@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 import requests
 from requests import Session
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.ssl_ import create_urllib3_context
+from urllib3.util.ssl_ import create_urllib3_context
 
 from ..errors import ErrorMessages, ErrorType, FncClientError
 from ..logger import FncClientLogger

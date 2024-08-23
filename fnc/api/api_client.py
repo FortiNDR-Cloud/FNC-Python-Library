@@ -3,7 +3,7 @@ import traceback
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator, List
 
-from requests.exceptions import *
+from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
 
 from fnc.api.endpoints import (
     DetectionApi,
