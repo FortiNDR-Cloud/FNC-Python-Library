@@ -158,9 +158,10 @@ def get_fake_detection(rule_id: str):
     }
 
 
-def get_fake_rule():
+def get_fake_rule(domain: str):
+    uuid = get_random_string()
     return {
-        "uuid": get_random_string(),
+        "uuid": uuid,
         "account_uuid": get_random_string(),
         "run_account_uuids": [get_random_string()],
         "name": get_random_string(),
@@ -177,7 +178,10 @@ def get_fake_rule():
         "critical_updated": get_random_date(),
         "rule_accounts": [get_random_string()],
         "device_ip_fields": [get_random_string()],
-        "source_excludes": []
+        "source_excludes": [],
+        "primary_attack_id": get_random_string(),
+        "secondary_attack_id": get_random_string(),
+        "rule_url": f"https://{domain}/detections/rules?rule_uuid={uuid}"
     }
 
 
@@ -194,11 +198,11 @@ def get_empty_detections_response():
     }
 
 
-def get_fake_detections_response(d_count: int, r_count: int):
+def get_fake_detections_response(domain: str, d_count: int, r_count: int):
     d_count = d_count or random.randint(1, 10)
     r_count = r_count or random.randint(1, 10)
 
-    rules = [get_fake_rule() for i in range(0, r_count)]
+    rules = [get_fake_rule(domain=domain) for i in range(0, r_count)]
     detections = [get_fake_detection(random.choice(rules)['uuid']) for i in range(0, d_count)]
 
     return {

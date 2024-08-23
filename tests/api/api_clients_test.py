@@ -7,17 +7,37 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
 
-from fnc.api.api_client import ApiContext, DetectionApi, EntityApi, FncApiClient, SensorApi
+from fnc.api.api_client import (
+    ApiContext,
+    DetectionApi,
+    EntityApi,
+    FncApiClient,
+    SensorApi,
+)
 from fnc.api.endpoints import EndpointKey
 from fnc.errors import ErrorMessages, ErrorType, FncClientError
 from fnc.fnc_client import FncClient
-from fnc.global_variables import (CLIENT_DEFAULT_DOMAIN, DEFAULT_DATE_FORMAT, POLLING_MAX_DETECTION_EVENTS, REQUEST_DEFAULT_TIMEOUT,
-                                  REQUEST_DEFAULT_VERIFY, REQUEST_MAXIMUM_RETRY_ATTEMPT)
+from fnc.global_variables import (
+    CLIENT_DEFAULT_DOMAIN,
+    DEFAULT_DATE_FORMAT,
+    POLLING_MAX_DETECTION_EVENTS,
+    REQUEST_DEFAULT_TIMEOUT,
+    REQUEST_DEFAULT_VERIFY,
+    REQUEST_MAXIMUM_RETRY_ATTEMPT,
+)
 from fnc.utils import datetime_to_utc_str, str_to_utc_datetime
 from tests.api.mocks import MockApi, MockEndpoint, MockRestClient
-from tests.utils import (deep_diff, get_empty_detection_events_response, get_empty_detections_response, get_fake_detection_events_response,
-                         get_fake_detections_response, get_fetch_dhcp_response, get_fetch_pdns_response, get_random_endpoint_keys,
-                         get_random_string)
+from tests.utils import (
+    deep_diff,
+    get_empty_detection_events_response,
+    get_empty_detections_response,
+    get_fake_detection_events_response,
+    get_fake_detections_response,
+    get_fetch_dhcp_response,
+    get_fetch_pdns_response,
+    get_random_endpoint_keys,
+    get_random_string,
+)
 
 
 def test_get_api_client_as_singleton(mocker):
@@ -1408,8 +1428,6 @@ def test_prepare_continuous_polling_validate_args_before_return_them(mocker):
         'pull_muted_devices':  'ALL',
         'include_description': True,
         'include_signature': True,
-        'include_pdns': True,
-        'include_dhcp': True,
         'include_events': True,
         'filter_training_detections': True,
         'start_date': '1 hour'
@@ -1450,8 +1468,6 @@ def test_continuous_polling_including_nothing(mocker):
         'pull_muted_devices':  'ALL',
         'include_description': False,
         'include_signature': False,
-        'include_pdns': False,
-        'include_dhcp': False,
         'include_events': False,
         'filter_training_detections': False,
         'start_date': start_date_str
@@ -1461,7 +1477,7 @@ def test_continuous_polling_including_nothing(mocker):
     agent = 'fake_agent'
 
     rest_client = MockRestClient()
-    detections_response = get_fake_detections_response(d_count=1, r_count=1)
+    detections_response = get_fake_detections_response(domain=domain, d_count=1, r_count=1)
     fake_rule = detections_response['rules'][0]
 
     mock_call_endpoint = mocker.patch('fnc.api.api_client.FncApiClient.call_endpoint', side_effect=[
@@ -1484,6 +1500,9 @@ def test_continuous_polling_including_nothing(mocker):
             assert 'rule_severity' in detection and detection.get('rule_severity') == fake_rule['severity']
             assert 'rule_confidence' in detection and detection.get('rule_confidence') == fake_rule['confidence']
             assert 'rule_category' in detection and detection.get('rule_category') == fake_rule['category']
+            assert 'rule_primary_attack_id' in detection and detection.get('rule_primary_attack_id') == fake_rule['primary_attack_id']
+            assert 'rule_secondary_attack_id' in detection and detection.get('rule_secondary_attack_id') == fake_rule['secondary_attack_id']
+            assert 'rule_url' in detection and detection.get('rule_url') == fake_rule['rule_url']
             assert 'rule_description' not in detection
             assert 'rule_signature' not in detection
 
@@ -1521,8 +1540,6 @@ def test_continuous_polling_including_all(mocker):
         'pull_muted_devices':  'ALL',
         'include_description': True,
         'include_signature': True,
-        'include_pdns': True,
-        'include_dhcp': True,
         'include_events': True,
         'filter_training_detections': True,
         'start_date': '1 hour'
@@ -1532,7 +1549,7 @@ def test_continuous_polling_including_all(mocker):
     agent = 'fake_agent'
 
     rest_client = MockRestClient()
-    detections_response = get_fake_detections_response(d_count=1, r_count=1)
+    detections_response = get_fake_detections_response(domain=domain, d_count=1, r_count=1)
     fake_rule = detections_response['rules'][0]
     fake_detection = detections_response['detections'][0]
     detections_event_response = get_fake_detection_events_response(count=1, detections=detections_response['detections'])
@@ -1540,8 +1557,6 @@ def test_continuous_polling_including_all(mocker):
 
     mock_call_endpoint = mocker.patch('fnc.api.api_client.FncApiClient.call_endpoint', side_effect=[
                                       copy.deepcopy(detections_response),
-                                      copy.deepcopy(get_fetch_pdns_response(count=1)),
-                                      copy.deepcopy(get_fetch_dhcp_response(count=1)),
                                       copy.deepcopy(detections_event_response),
                                       copy.deepcopy(get_empty_detections_response())])
 
@@ -1564,6 +1579,9 @@ def test_continuous_polling_including_all(mocker):
             assert 'rule_category' in detection and detection.get('rule_category') == fake_rule['category']
             assert 'rule_description' in detection and detection.get('rule_description') == fake_rule['description']
             assert 'rule_signature' in detection and detection.get('rule_signature') == fake_rule['query_signature']
+            assert 'rule_primary_attack_id' in detection and detection.get('rule_primary_attack_id') == fake_rule['primary_attack_id']
+            assert 'rule_secondary_attack_id' in detection and detection.get('rule_secondary_attack_id') == fake_rule['secondary_attack_id']
+            assert 'rule_url' in detection and detection.get('rule_url') == fake_rule['rule_url']
 
             assert 'events' in response
             assert detection.get('uuid') in response.get('events')
@@ -1576,15 +1594,12 @@ def test_continuous_polling_including_all(mocker):
             # Detections can only be returned twice in this test. The first time with one detection and the second one with none.
             assert False
 
-    assert mock_call_endpoint.call_count == 5
+    assert mock_call_endpoint.call_count == 3
 
     i = 0
-    expected_endpoints = [EndpointKey.GET_DETECTIONS, EndpointKey.GET_ENTITY_PDNS, EndpointKey.GET_ENTITY_DHCP,
-                          EndpointKey.GET_DETECTION_EVENTS, EndpointKey.GET_DETECTIONS]
+    expected_endpoints = [EndpointKey.GET_DETECTIONS, EndpointKey.GET_DETECTION_EVENTS, EndpointKey.GET_DETECTIONS]
     expected_args = [
         {'offset': 0, 'status': polling_args.get('status'), 'sort_by': 'device_ip', 'sort_order': 'asc', 'include': 'rules, indicators'},
-        {'entity': fake_detection['device_ip']},
-        {'entity': fake_detection['device_ip']},
         {'detection_uuid': fake_detection['uuid'], 'offset': 0},
         {'offset': 1, 'status': polling_args.get(
             'status'), 'sort_by': 'device_ip', 'sort_order': 'asc', 'include': 'rules, indicators'}
@@ -1592,7 +1607,7 @@ def test_continuous_polling_including_all(mocker):
     for c in mock_call_endpoint.call_args_list:
         assert c.kwargs
         assert expected_endpoints[i] == c.kwargs.get('endpoint', None)
-        received_args = c.kwargs.get('args', {})
+        received_args = c.kwargs.get('args')
         assert all(k in received_args and received_args.get(k) == expected_args[i].get(k) for k in expected_args[i])
         i += 1
 
@@ -1606,8 +1621,6 @@ def test_continuous_polling_failure_get_detections_fails(mocker):
         'pull_muted_devices':  'ALL',
         'include_description': True,
         'include_signature': True,
-        'include_pdns': True,
-        'include_dhcp': True,
         'include_events': True,
         'filter_training_detections': True,
         'start_date': '1 hour'
@@ -1680,8 +1693,6 @@ def test_get_splitted_context_past_start_and_end_dates(mocker):
         'pull_muted_devices':  random.choice([True, False, 'All']),
         'include_description': random.choice([True, False]),
         'include_signature': random.choice([True, False]),
-        'include_pdns': random.choice([True, False]),
-        'include_dhcp': random.choice([True, False]),
         'include_events': random.choice([True, False]),
         'filter_training_detections': random.choice([True, False])
     }
@@ -1734,8 +1745,6 @@ def test_get_splitted_context_past_start_date_future_end_date(mocker):
         'pull_muted_devices':  random.choice([True, False, 'All']),
         'include_description': random.choice([True, False]),
         'include_signature': random.choice([True, False]),
-        'include_pdns': random.choice([True, False]),
-        'include_dhcp': random.choice([True, False]),
         'include_events': random.choice([True, False]),
         'filter_training_detections': random.choice([True, False])
     }
@@ -1785,8 +1794,6 @@ def test_get_splitted_context_past_start_date_no_end_date(mocker):
         'pull_muted_devices':  random.choice([True, False, 'All']),
         'include_description': random.choice([True, False]),
         'include_signature': random.choice([True, False]),
-        'include_pdns': random.choice([True, False]),
-        'include_dhcp': random.choice([True, False]),
         'include_events': random.choice([True, False]),
         'filter_training_detections': random.choice([True, False])
     }
@@ -1830,8 +1837,6 @@ def test_get_splitted_context_no_start_date_no_end_date(mocker):
         'pull_muted_devices':  random.choice([True, False, 'All']),
         'include_description': random.choice([True, False]),
         'include_signature': random.choice([True, False]),
-        'include_pdns': random.choice([True, False]),
-        'include_dhcp': random.choice([True, False]),
         'include_events': random.choice([True, False]),
         'filter_training_detections': random.choice([True, False])
     }
@@ -1879,8 +1884,6 @@ def test_get_splitted_context_future_start_date_future_end_date(mocker):
         'pull_muted_devices':  random.choice([True, False, 'All']),
         'include_description': random.choice([True, False]),
         'include_signature': random.choice([True, False]),
-        'include_pdns': random.choice([True, False]),
-        'include_dhcp': random.choice([True, False]),
         'include_events': random.choice([True, False]),
         'filter_training_detections': random.choice([True, False])
     }
@@ -1989,8 +1992,6 @@ def test_poll_history_succeed_no_enrichment(mocker):
         'pull_muted_devices':  'ALL',
         'include_description': True,
         'include_signature': True,
-        'include_pdns': False,
-        'include_dhcp': False,
         'include_events': False,
         'filter_training_detections': True,
         'limit': limit
@@ -2006,7 +2007,7 @@ def test_poll_history_succeed_no_enrichment(mocker):
     detections_responses = []
     days = random.randint(2, 5)
     for i in range(1, days):
-        detections_response = get_fake_detections_response(d_count=limit, r_count=random.randint(1, limit))
+        detections_response = get_fake_detections_response(domain=domain, d_count=limit, r_count=random.randint(1, limit))
         detections_responses.append(detections_response)
     polling_args['start_date'] = f'{days} days ago'
 
@@ -2041,8 +2042,6 @@ def test_poll_history_succeed_no_enrichment(mocker):
 def test_poll_history_succeed_enrichment(mocker):
     limit = random.randint(100, 500)
     days = 2  # random.randint(2, 5)
-    enrichments = [False, False, False]
-    enrichments[random.randint(0, 2)] = True
 
     polling_args = {
         'polling_delay': 10,
@@ -2052,9 +2051,7 @@ def test_poll_history_succeed_enrichment(mocker):
         'pull_muted_devices':  False,
         'include_description': False,
         'include_signature': False,
-        'include_pdns': enrichments[0],
-        'include_dhcp': enrichments[1],
-        'include_events': enrichments[2],
+        'include_events': True,
         'filter_training_detections': False,
         'limit': limit * days
     }
@@ -2071,7 +2068,7 @@ def test_poll_history_succeed_enrichment(mocker):
 
     for i in range(0, days):
         responses = []
-        detections_response = get_fake_detections_response(d_count=limit, r_count=random.randint(1, limit))
+        detections_response = get_fake_detections_response(domain=domain, d_count=limit, r_count=random.randint(1, limit))
         responses.append(detections_response)
         detections_responses.append(detections_response)
         empty_response = get_empty_detections_response()
