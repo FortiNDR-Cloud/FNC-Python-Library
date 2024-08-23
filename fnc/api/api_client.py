@@ -725,11 +725,19 @@ class FncApiClient:
         if include_signature:
             detection.update({'rule_signature': rule['query_signature']})
 
-    def get_entity_information(self, entity: str, fetch_pdns: bool = False, fetch_dhcp: bool = False, filter_training: bool = True) -> dict:
+    def get_entity_information(
+        self,
+        entity: str,
+        fetch_pdns: bool = False,
+        fetch_dhcp: bool = False,
+        fetch_vt: bool = False,
+        filter_training: bool = True
+    ) -> dict:
         result: dict = {}
-        if not fetch_dhcp and not fetch_pdns:
+        if not fetch_dhcp and not fetch_pdns and not fetch_vt:
             return result
 
+        result.update({'entity': entity})
         self.logger.debug(f'Retrieving information for entity {entity}.')
 
         # Get PDNS/VT/DHCP info if requested
@@ -738,7 +746,7 @@ class FncApiClient:
             try:
                 pdns_data = self.call_endpoint(
                     endpoint=EndpointKey.GET_ENTITY_PDNS, args={'entity': entity})
-                pdns: list = pdns_data.get('pdns_data', [])
+                pdns: list = pdns_data.get('passivedns', [])
                 if filter_training:
                     pdns = list(filter(
                         lambda v: v.get('account_uuid', '') != POLLING_TRAINING_ACCOUNT_ID, pdns))
@@ -747,6 +755,7 @@ class FncApiClient:
 
                 self.logger.debug(
                     "Entity's pdns information successfully retrieved.")
+
             except FncClientError as e:
                 # If the request fails for a particular entity, we log it but continue with the execution.
                 self.logger.error(f"PDNS information for entity {entity} cannot be added due to:")
@@ -769,6 +778,22 @@ class FncApiClient:
             except FncClientError as e:
                 # If the request fails for a particular entity, we log it but continue with the execution.
                 self.logger.error(f"DHCP information for entity {entity} cannot be added due to:")
+                self.logger.error("\n".join(traceback.format_exception(e)))
+
+        if fetch_vt:
+            self.logger.debug("Fetching entity's Virus Total information.")
+            try:
+                vt_data = self.call_endpoint(
+                    endpoint=EndpointKey.GET_ENTITY_VIRUS_TOTAL, args={'entity': entity})
+                vt: list = vt_data.get('vt_response', [])
+
+                result.update({"vt": vt})
+
+                self.logger.debug(
+                    "Entity's Virus Total information successfully retrieved.")
+            except FncClientError as e:
+                # If the request fails for a particular entity, we log it but continue with the execution.
+                self.logger.error(f"Virus Total information for entity {entity} cannot be added due to:")
                 self.logger.error("\n".join(traceback.format_exception(e)))
 
         return result
