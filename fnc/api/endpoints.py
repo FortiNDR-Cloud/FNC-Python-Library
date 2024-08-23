@@ -1,4 +1,5 @@
 from enum import Enum, auto
+from typing import Union
 
 from requests import Response
 from requests.exceptions import HTTPError, JSONDecodeError
@@ -9,7 +10,7 @@ from ..logger import FncClientLogger
 __all__ = [
     'EndpointKey', 'Endpoint',
     'GetSensors', 'GetDevices', 'GetTask', 'GetTasks', 'CreateTask', 'GetTelemetryEvents', 'GetTelemetryPacketstats', 'GetTelemetryNetwork',
-    'GetEntitySummary', 'GetEntityPdns', 'GetEntityDhcp', 'GetEntityFile',
+    'GetEntitySummary', 'GetEntityPdns', 'GetEntityDhcp', 'GetEntityVirusTotal', 'GetEntityFile',
     'GetDetections', 'ResolveDetection', 'GetDetectionEvents', 'GetRules', 'GetRule', 'CreateRule', 'GetRuleEvents',
     'FncApi', 'SensorApi', 'DetectionApi', 'EntityApi'
 ]
@@ -1121,5 +1122,6 @@ class EntityApi(FncApi):
             EndpointKey.GET_ENTITY_SUMMARY: GetEntitySummary(),
             EndpointKey.GET_ENTITY_PDNS: GetEntityPdns(),
             EndpointKey.GET_ENTITY_DHCP: GetEntityDhcp(),
+            EndpointKey.GET_ENTITY_VIRUS_TOTAL: GetEntityVirusTotal(),
             EndpointKey.GET_ENTITY_FILE: GetEntityFile(),
         }
