@@ -1,7 +1,7 @@
 
 import traceback
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterator, List
+from typing import Any, Iterator, List, Union
 
 from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
 
@@ -181,13 +181,13 @@ class FncApiClient:
             )
         return full_url
 
-    def get_endpoint_if_supported(self, endpoint: str | EndpointKey) -> tuple[Endpoint, FncApi]:
+    def get_endpoint_if_supported(self, endpoint: Union[str, EndpointKey]) -> tuple[Endpoint, FncApi]:
         """
         This method verify if the endpoint is supported by any of the defined APIs.
         If the endpoint is supported the endpoint's definition and the API are returned.
 
         Args:
-            endpoint (str | EndpointKey): The endpoint to be retrieved. It can be passed as the EndpointKey or just the name.
+            endpoint (Union[str, EndpointKey]): The endpoint to be retrieved. It can be passed as the EndpointKey or just the name.
 
         Raises:
             FncApiClientError: Error_Type ENDPOINT_ERROR if the Endpoint was not provided, defined or it is not supported.
@@ -292,7 +292,7 @@ class FncApiClient:
         args.update({'headers': self._get_headers()})
         return args
 
-    def _prepare_request(self, endpoint: str | EndpointKey, args: dict) -> tuple[Endpoint, dict]:
+    def _prepare_request(self, endpoint: Union[str, EndpointKey], args: dict) -> tuple[Endpoint, dict]:
         """
         This method receive an endpoint and a dictionary of arguments it then verify that the endpoint is supported,
         that any required argument is present and that there is no unexpected argument. If the validation is passed,
@@ -300,7 +300,7 @@ class FncApiClient:
         with its value.
 
         Args:
-            endpoint (str | EndpointKey): endpoint to be called
+            endpoint (Union[str, EndpointKey]): endpoint to be called
             args (dict): arguments to be passed with the request
 
         Raises:
@@ -427,14 +427,14 @@ class FncApiClient:
 
         return need_retry and attempt <= REQUEST_MAXIMUM_RETRY_ATTEMPT
 
-    def call_endpoint(self, endpoint: str | EndpointKey, args: dict) -> dict:
+    def call_endpoint(self, endpoint: Union[str, EndpointKey], args: dict) -> dict:
         """
         This method receives an endpoint and a dictionary of arguments. It will prepare
         and send the request to the received endpoint as well as validate the returned
         response returning the json response if it is valid
 
         Args:
-            endpoint (str | EndpointKey): Endpoint to where to send the request
+            endpoint (Union[str, EndpointKey]): Endpoint to where to send the request
             args (dict): dictionary with all the argument's values that need to passed with the request
 
         Raises:
@@ -474,7 +474,8 @@ class FncApiClient:
 
             except Exception as ex:
                 self.logger.error(f"The request to {endpoint_key_name} endpoint failed due to:")
-                self.logger.error("\n".join(traceback.format_exception(ex)))
+
+                self.logger.error(traceback.format_exc())
                 error = ex
 
             attempt += 1
@@ -717,7 +718,7 @@ class FncApiClient:
         detection.update({'rule_category': rule['category']})
         detection.update({'rule_primary_attack_id': rule['primary_attack_id']})
         detection.update({'rule_secondary_attack_id': rule['secondary_attack_id']})
-        detection.update({'rule_url': f"https://{self.domain}/detections/rules?rule_uuid={rule['uuid']}"})
+        detection.update({'rule_url': f"{self._get_portal_url()}/detections/rules?rule_uuid={rule['uuid']}"})
 
         if include_description:
             detection.update({'rule_description': rule['description']})
@@ -751,15 +752,15 @@ class FncApiClient:
                     pdns = list(filter(
                         lambda v: v.get('account_uuid', '') != POLLING_TRAINING_ACCOUNT_ID, pdns))
 
-                result.update({"PDNS": pdns})
+                result.update({"pdns": pdns})
 
                 self.logger.debug(
                     "Entity's pdns information successfully retrieved.")
 
-            except FncClientError as e:
+            except FncClientError:
                 # If the request fails for a particular entity, we log it but continue with the execution.
                 self.logger.error(f"PDNS information for entity {entity} cannot be added due to:")
-                self.logger.error("\n".join(traceback.format_exception(e)))
+                self.logger.error(traceback.format_exc())
 
         if fetch_dhcp:
             self.logger.debug("Fetching entity's DHCP information.")
@@ -775,10 +776,10 @@ class FncApiClient:
 
                 self.logger.debug(
                     "Entity's DHCP information successfully retrieved.")
-            except FncClientError as e:
+            except FncClientError:
                 # If the request fails for a particular entity, we log it but continue with the execution.
                 self.logger.error(f"DHCP information for entity {entity} cannot be added due to:")
-                self.logger.error("\n".join(traceback.format_exception(e)))
+                self.logger.error(traceback.format_exc())
 
         if fetch_vt:
             self.logger.debug("Fetching entity's Virus Total information.")
@@ -791,10 +792,10 @@ class FncApiClient:
 
                 self.logger.debug(
                     "Entity's Virus Total information successfully retrieved.")
-            except FncClientError as e:
+            except FncClientError:
                 # If the request fails for a particular entity, we log it but continue with the execution.
                 self.logger.error(f"Virus Total information for entity {entity} cannot be added due to:")
-                self.logger.error("\n".join(traceback.format_exception(e)))
+                self.logger.error(traceback.format_exc())
 
         return result
 
@@ -852,11 +853,11 @@ class FncApiClient:
                 total += 1
                 try:
                     detection_events.update({detection['uuid']: self._get_detection_events(detection['uuid'])})
-                except FncClientError as e:
+                except FncClientError:
                     failed += 1
                     # If the request for associated events fails for a particular detection, we log it but continue with the execution.
                     self.logger.error(f"Detection's events request for {detection['uuid']} failed due to:")
-                    self.logger.error("\n".join(traceback.format_exception(e)))
+                    self.logger.error(traceback.format_exc())
 
             self.logger.info(f"Associated events for ({total - failed} out of {total}) detections were successfully added to the response.")
 
@@ -975,7 +976,7 @@ class FncApiClient:
                 error_message = 'Detections cannot be pulled due to:'
                 if e.error_type != ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR:
                     self.logger.error(f"{error_message} \n {str(e)}")
-                    # self.logger.error("\n".join(traceback.format_exception(e)))
+                    # self.logger.error(traceback.format_exc())
                     raise e
                 else:
                     self.logger.info(f"{error_message} \n {str(e)}")
@@ -983,7 +984,7 @@ class FncApiClient:
                     return
             except Exception as e:
                 self.logger.error("Detections polling failed unexpectedly.")
-                self.logger.error("\n".join(traceback.format_exception(e)))
+                self.logger.error(traceback.format_exc())
                 raise FncClientError(
                     error_type=ErrorType.GENERIC_ERROR,
                     error_message=ErrorMessages.GENERIC_ERROR_MESSAGE,

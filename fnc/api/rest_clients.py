@@ -24,7 +24,7 @@ class SSLAdapter(HTTPAdapter):
         :return: No data returned
         :rtype: ``None``
     """
-    context = create_urllib3_context(ciphers=CIPHERS_STRING)
+    context = create_urllib3_context()
 
     def __init__(self, verify=True, **kwargs):
         # type: (bool, dict) -> None

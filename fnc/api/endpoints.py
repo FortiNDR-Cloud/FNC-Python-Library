@@ -1,4 +1,5 @@
 from enum import Enum, auto
+from typing import Union
 
 from requests import Response
 from requests.exceptions import HTTPError, JSONDecodeError
@@ -182,7 +183,7 @@ class Endpoint:
         # Return the all the arguments separated by where are they required url, body, query string or control
         return final_args
 
-    def _evaluate_arguments(self, to_evaluate: dict | list, args: dict) -> dict:
+    def _evaluate_arguments(self, to_evaluate: Union[dict, list], args: dict) -> dict:
         """
         This method filter the arguments (args) leaving only those that are included in the arguments definition (to_evaluate).
         If the expected argument allows multiple values, its value (comma separated str) is converted to a list.
@@ -274,7 +275,7 @@ class Endpoint:
                 error_data={'endpoint': self.get_endpoint_key().name, 'missing': missing, 'unexpected': unexpected, 'invalid': invalid}
             )
 
-    def _validate_argument(self, to_validate: dict, args_definition: dict | list, requires_all: bool = False) -> tuple[list, list, list]:
+    def _validate_argument(self, to_validate: dict, args_definition: Union[dict, list], requires_all: bool = False) -> tuple[list, list, list]:
         """
         This method take a dictionary of arguments and the arguments definitions to validate that
         any required argument is present and any existing argument is expected.
@@ -1070,7 +1071,7 @@ class FncApi:
     def get_supported_endpoints(self) -> dict:
         raise NotImplementedError()
 
-    def get_endpoint_if_supported(self, endpoint: str | EndpointKey) -> Endpoint:
+    def get_endpoint_if_supported(self, endpoint: Union[str, EndpointKey]) -> Endpoint:
         k = None
         if isinstance(endpoint, str):
             try:

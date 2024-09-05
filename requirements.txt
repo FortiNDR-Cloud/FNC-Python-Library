@@ -1,7 +1,8 @@
-requests==2.31.0
+requests
 pytest
 pytest-mock
 requests-mock
 dateparser
 boto3
+urllib3
 
