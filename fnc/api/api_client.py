@@ -112,7 +112,7 @@ class FncApiClient:
 
         # Call Get_Detections endpoint with limit = 1
         try:
-            _ = self.call_endpoint(EndpointKey.GET_DETECTIONS, {'limit': 1})
+            _ = self.call_endpoint(EndpointKey.GET_SENSORS, {})
             self.logger.info("The API Token has been successfully validated.")
         except FncClientError as e:
             self.logger.error(f"API Token validation failed due to {e}.")
@@ -125,6 +125,22 @@ class FncApiClient:
 
     def get_logger(self):
         return self.logger
+
+    def _get_portal_url(self) -> str:
+        """
+        This method construct the portal url by mapping icebrg.io to fortindr.forticloud.com.
+        """
+
+        domain = self.domain
+        domain.replace('icebrg.io', 'fortindr.forticloud.com')
+        # Prepare the url
+        if domain.startswith('-uat'):
+            # To allow use of uat environment
+            url = f"{self.protocol}://portal{domain}/"
+        else:
+            url = f"{self.protocol}://portal.{domain}/"
+
+        return url
 
     def get_url(self, e: Endpoint, api: FncApi, url_args: dict = {}) -> str:
         """
