@@ -358,8 +358,8 @@ class Endpoint:
 
         if self.get_response_fields() is None:
             # Validate the response is empty as it was expected
-            if response.text():
-                error = f"An empty response was expected but '{response.text()}' was received."
+            if response.text:
+                error = f"An empty response was expected but '{response.text}' was received."
                 raise FncClientError(
                     error_type=ErrorType.ENDPOINT_RESPONSE_VALIDATION_ERROR,
                     error_message=ErrorMessages.ENDPOINT_RESPONSE_INVALID,
