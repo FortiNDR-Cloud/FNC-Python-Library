@@ -50,6 +50,13 @@ class ApiContext:
     def get_history(self):
         return self._history
 
+    def get_remaining_history(self):
+        history = self._history.copy()
+        if self._checkpoint:
+            history['start_date'] = self._checkpoint
+
+        return history
+
     def update_checkpoint(self, checkpoint: str):
         self._checkpoint = checkpoint
 
