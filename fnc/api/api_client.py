@@ -139,13 +139,13 @@ class FncApiClient:
         """
 
         domain = self.domain
-        domain.replace('icebrg.io', 'fortindr.forticloud.com')
+        domain = domain.replace('icebrg.io', 'fortindr.forticloud.com')
         # Prepare the url
         if domain.startswith('-uat'):
             # To allow use of uat environment
-            url = f"{self.protocol}://portal{domain}/"
+            url = f"{self.protocol}://portal{domain}"
         else:
-            url = f"{self.protocol}://portal.{domain}/"
+            url = f"{self.protocol}://portal.{domain}"
 
         return url
 

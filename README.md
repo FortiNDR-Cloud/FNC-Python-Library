@@ -1,5 +1,5 @@
-# Python Metastream Client
-version: v1.0.0
+# FNC Python Library
+version: v1.0.2
 
 ----
 # Build
@@ -14,11 +14,11 @@ python3 setup.py bdist_wheel
 # Install
 Install the package
 ```shell
-pip install dist/com.fortinet.fndrc.integrations.metastream-1.*.tar.gz
+pip install dist/com.fortinet.fndrc.integrations.python_client-1.*.tar.gz
 ```
 To install to a specific directory use the `--target`argument.
 ```shell
-pip install --target <directory> dist/com.fortinet.fndrc.integrations.metastream-1.*.tar.gz
+pip install --target <directory> dist/com.fortinet.fndrc.integrations.python_client-1.*.tar.gz
 ```
 # Functions
 ## fetch_events_by_day
