@@ -315,7 +315,7 @@ class FncApiClient:
         args.update({'headers': self._get_headers()})
         return args
 
-    def _prepare_request(self, endpoint: Union[str, EndpointKey], args: dict) -> tuple[Endpoint, dict]:
+    def _prepare_request(self, endpoint: Union[str, EndpointKey], args: dict, reduced_log: bool = False) -> tuple[Endpoint, dict]:
         """
         This method receive an endpoint and a dictionary of arguments it then verify that the endpoint is supported,
         that any required argument is present and that there is no unexpected argument. If the validation is passed,
@@ -450,7 +450,7 @@ class FncApiClient:
 
         return need_retry and attempt <= REQUEST_MAXIMUM_RETRY_ATTEMPT
 
-    def call_endpoint(self, endpoint: Union[str, EndpointKey], args: dict) -> dict:
+    def call_endpoint(self, endpoint: Union[str, EndpointKey], args: dict, reduced_log: bool = False) -> dict:
         """
         This method receives an endpoint and a dictionary of arguments. It will prepare
         and send the request to the received endpoint as well as validate the returned
@@ -466,6 +466,9 @@ class FncApiClient:
         Returns:
             dict:  Response's json
         """
+        # We avoid printing info and debug logs when the continuous calling is enriching
+        # detections with associated events
+
         endpoint_key_name = endpoint if isinstance(endpoint, str) else endpoint.name
         need_retry = False
         attempt = 0
@@ -474,7 +477,7 @@ class FncApiClient:
         args = args.copy()
 
         while attempt == 0 or need_retry:
-            if need_retry:
+            if need_retry and not reduced_log:
                 self.logger.info(f"Retrying...... [attempt #{attempt}]")
 
             response = None
@@ -487,13 +490,15 @@ class FncApiClient:
                     req_args=e_args['control_args'], body_args=e_args['body_args'], query_args=e_args['query_args']
                 )
 
-                self.logger.info(f"Sending request to {e.get_endpoint_key().name} endpoint.")
+                if not reduced_log:
+                    self.logger.info(f"Sending request to {e.get_endpoint_key().name} endpoint.")
 
                 self.rest_client.validate_request(req_args)
                 response = self.rest_client.send_request(req_args=req_args)
 
                 res_json = e.validate_response(response)
-                self.logger.info("Response successfully validated.")
+                if not reduced_log:
+                    self.logger.info("Response successfully validated.")
 
             except Exception as ex:
                 self.logger.error(f"The request to {endpoint_key_name} endpoint failed due to:")
@@ -902,7 +907,7 @@ class FncApiClient:
         while 'events' not in response or len(response['events']) == POLLING_MAX_DETECTION_EVENTS:
             try:
                 response = self.call_endpoint(
-                    endpoint=EndpointKey.GET_DETECTION_EVENTS, args=args.copy())
+                    endpoint=EndpointKey.GET_DETECTION_EVENTS, args=args.copy(), reduced_log=True)
                 args['offset'] = args.get(
                     'offset', 0) + POLLING_MAX_DETECTION_EVENTS
                 detection_events.extend(response['events'])
