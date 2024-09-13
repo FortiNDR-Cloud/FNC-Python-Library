@@ -831,7 +831,7 @@ class FncApiClient:
 
         return False
 
-    def _process_response(self, response: dict, entities_info: dict = None, args: dict = None) -> dict:
+    def _process_response(self, response: dict, args: dict = None):
         # Getting instructions from the arguments
         args = args or {}
         include_description = self._get_as_bool(args.get('include_description'))
@@ -839,6 +839,7 @@ class FncApiClient:
         include_events = self._get_as_bool(args.get('include_events'))
 
         detection_events = {}
+        total_events = 0
 
         dCount = len(response['detections']) if "detections" in response else 0
         if dCount == 0:
@@ -875,17 +876,19 @@ class FncApiClient:
             for detection in response['detections']:
                 total += 1
                 try:
-                    detection_events.update({detection['uuid']: self._get_detection_events(detection['uuid'])})
+                    events = self._get_detection_events(detection['uuid'])
+                    total_events = total_events + len(events)
+                    detection_events.update({detection['uuid']: events})
                 except FncClientError:
                     failed += 1
                     # If the request for associated events fails for a particular detection, we log it but continue with the execution.
                     self.logger.error(f"Detection's events request for {detection['uuid']} failed due to:")
                     self.logger.error(traceback.format_exc())
 
-            self.logger.info(f"Associated events for ({total - failed} out of {total}) detections were successfully added to the response.")
+            self.logger.info(f"{total - failed} out of {total}) detections were successfully processed.")
+            self.logger.info(f"{total_events} associated events were successfully added to the response.")
 
         response.update({'events': detection_events})
-        return entities_info
 
     def _get_detection_events(self, detection_id: str) -> list:
         detection_events = []
@@ -957,7 +960,6 @@ class FncApiClient:
         context = context or ApiContext()
 
         response = {}
-        entities_info = {}
 
         limit = args.get('limit', 0)
         is_limited = limit > 0
@@ -983,7 +985,7 @@ class FncApiClient:
 
                 if 'detections' in response and len(response['detections']) > 0:
                     # Process the response enriching it if requested
-                    entities_info = self._process_response(response=response, entities_info=entities_info, args=args)
+                    self._process_response(response=response, args=args)
 
                     offset = polling_args.get('offset', 0)
                     polling_args['offset'] = offset + len(response['detections'])
@@ -1184,8 +1186,20 @@ class FncApiClient:
                 if e.error_type == ErrorType.POLLING_LIMIT_OVERPASSED:
                     if delta <= timedelta(hours=1):
                         # If the interval is less than 1h we do not split it and stop iteration
-                        self.get_logger().info(
-                            f"The limit of {limit} was overpassed but the interval is to short to split. The iteration will be ended.")
+                        if d_count > 0:
+                            self.get_logger().info(
+                                f"The limit of {limit} was overpassed but the interval is to short to split. The iteration will be ended.")
+                        else:
+                            self.get_logger().info(
+                                f"The limit of {limit} was overpassed but the interval is to short to split. Returning a single hour worth of detections.")
+                            lmt = args.pop('limit')
+                            for detections in self.continuous_polling(context=context, args=args):
+                                # we pull detections for the current piece and update the limit appropriately
+
+                                count += len(detections.get('detections', []))
+                                yield detections
+                            args['limit'] = lmt
+                            d_count += count
                         is_done = True
                     elif not d_count or delta == interval:
                         self.get_logger().info(f"The limit of {limit} was overpassed. Splitting the interval in half.")
