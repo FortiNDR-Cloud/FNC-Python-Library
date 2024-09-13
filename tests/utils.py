@@ -181,7 +181,7 @@ def get_fake_rule(domain: str):
         "source_excludes": [],
         "primary_attack_id": get_random_string(),
         "secondary_attack_id": get_random_string(),
-        "rule_url": f"https://{domain}/detections/rules?rule_uuid={uuid}"
+        "rule_url": f"https://portal.{domain}/detections/rules?rule_uuid={uuid}"
     }
 
 
