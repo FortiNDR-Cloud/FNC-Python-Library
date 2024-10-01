@@ -1,4 +1,5 @@
 from enum import Enum, auto
+from typing import Union
 
 from requests import Response
 from requests.exceptions import HTTPError, JSONDecodeError
@@ -9,7 +10,7 @@ from ..logger import FncClientLogger
 __all__ = [
     'EndpointKey', 'Endpoint',
     'GetSensors', 'GetDevices', 'GetTask', 'GetTasks', 'CreateTask', 'GetTelemetryEvents', 'GetTelemetryPacketstats', 'GetTelemetryNetwork',
-    'GetEntitySummary', 'GetEntityPdns', 'GetEntityDhcp', 'GetEntityFile',
+    'GetEntitySummary', 'GetEntityPdns', 'GetEntityDhcp', 'GetEntityVirusTotal', 'GetEntityFile',
     'GetDetections', 'ResolveDetection', 'GetDetectionEvents', 'GetRules', 'GetRule', 'CreateRule', 'GetRuleEvents',
     'FncApi', 'SensorApi', 'DetectionApi', 'EntityApi'
 ]
@@ -49,6 +50,7 @@ class EndpointKey (EndpointEnum):
     GET_ENTITY_PDNS = auto()
     GET_ENTITY_DHCP = auto()
     GET_ENTITY_FILE = auto()
+    GET_ENTITY_VIRUS_TOTAL = auto()
 
 
 class Endpoint:
@@ -181,7 +183,7 @@ class Endpoint:
         # Return the all the arguments separated by where are they required url, body, query string or control
         return final_args
 
-    def _evaluate_arguments(self, to_evaluate: dict | list, args: dict) -> dict:
+    def _evaluate_arguments(self, to_evaluate: Union[dict, list], args: dict) -> dict:
         """
         This method filter the arguments (args) leaving only those that are included in the arguments definition (to_evaluate).
         If the expected argument allows multiple values, its value (comma separated str) is converted to a list.
@@ -273,7 +275,7 @@ class Endpoint:
                 error_data={'endpoint': self.get_endpoint_key().name, 'missing': missing, 'unexpected': unexpected, 'invalid': invalid}
             )
 
-    def _validate_argument(self, to_validate: dict, args_definition: dict | list, requires_all: bool = False) -> tuple[list, list, list]:
+    def _validate_argument(self, to_validate: dict, args_definition: Union[dict, list], requires_all: bool = False) -> tuple[list, list, list]:
         """
         This method take a dictionary of arguments and the arguments definitions to validate that
         any required argument is present and any existing argument is expected.
@@ -356,8 +358,8 @@ class Endpoint:
 
         if self.get_response_fields() is None:
             # Validate the response is empty as it was expected
-            if response.text():
-                error = f"An empty response was expected but '{response.text()}' was received."
+            if response.text:
+                error = f"An empty response was expected but '{response.text}' was received."
                 raise FncClientError(
                     error_type=ErrorType.ENDPOINT_RESPONSE_VALIDATION_ERROR,
                     error_message=ErrorMessages.ENDPOINT_RESPONSE_INVALID,
@@ -706,6 +708,30 @@ class GetEntitySummary(Endpoint):
         return ['summary']
 
 
+class GetEntityVirusTotal(Endpoint):
+    version: str = 'v1'
+    endpoint: str = 'entity/{entity}/vt'
+
+    default_values: dict = {}
+
+    def get_endpoint_key(self) -> EndpointKey:
+        return EndpointKey.GET_ENTITY_VIRUS_TOTAL
+
+    def get_control_args(self) -> dict:
+        return {
+            'method': 'GET'
+        }
+
+    def get_url_args(self) -> list:
+        return ['entity']
+
+    def get_query_args(self) -> dict:
+        return {}
+
+    def get_response_fields(self) -> list[str]:
+        return ['vt_response']
+
+
 class GetEntityPdns(Endpoint):
     version: str = 'v1'
     endpoint: str = 'entity/{entity}/pdns'
@@ -1045,7 +1071,7 @@ class FncApi:
     def get_supported_endpoints(self) -> dict:
         raise NotImplementedError()
 
-    def get_endpoint_if_supported(self, endpoint: str | EndpointKey) -> Endpoint:
+    def get_endpoint_if_supported(self, endpoint: Union[str, EndpointKey]) -> Endpoint:
         k = None
         if isinstance(endpoint, str):
             try:
@@ -1096,5 +1122,6 @@ class EntityApi(FncApi):
             EndpointKey.GET_ENTITY_SUMMARY: GetEntitySummary(),
             EndpointKey.GET_ENTITY_PDNS: GetEntityPdns(),
             EndpointKey.GET_ENTITY_DHCP: GetEntityDhcp(),
+            EndpointKey.GET_ENTITY_VIRUS_TOTAL: GetEntityVirusTotal(),
             EndpointKey.GET_ENTITY_FILE: GetEntityFile(),
         }

@@ -1,8 +1,14 @@
+import json
 import os.path
 from datetime import datetime, timedelta, timezone
 from typing import Iterator, List
 
-from fnc.global_variables import CLIENT_DEFAULT_USER_AGENT, DEFAULT_DATE_FORMAT, METASTREAM_DEFAULT_BUCKET, METASTREAM_SUPPORTED_EVENT_TYPES
+from fnc.global_variables import (
+    CLIENT_DEFAULT_USER_AGENT,
+    DEFAULT_DATE_FORMAT,
+    METASTREAM_DEFAULT_BUCKET,
+    METASTREAM_SUPPORTED_EVENT_TYPES,
+)
 from fnc.utils import datetime_to_utc_str, str_to_utc_datetime
 
 from ..errors import ErrorMessages, ErrorType, FncClientError
@@ -119,9 +125,18 @@ class FncMetastreamClient:
                 exception=e
             ) from e
 
-    def _get_prefixes(self, s3: S3Client, event_type: str, start_day: datetime = None, end_day: datetime = None, context: MetastreamContext = None):
+    def _get_prefixes(
+        self,
+        s3: S3Client,
+        event_type: str,
+        start_day: datetime = None,
+        end_day: datetime = None,
+        context: MetastreamContext = None
+    ):
         if not s3:
-            self.get_logger().warning("Prefixes for the S3 buckets cannot be retrieved due to: The client to connect to AWS S3 bucket was not provided.")
+            self.get_logger().warning(
+                "Prefixes for the S3 buckets cannot be retrieved due to: The client to connect to AWS S3 bucket was not provided."
+            )
             return
 
         if not start_day:
@@ -277,14 +292,21 @@ class FncMetastreamClient:
         h_context = MetastreamContext()
         context = MetastreamContext()
 
+        self.logger.info("Splitting the context to extract the history.")
+        self.logger.debug(f"Start date={start_date_str}")
+
         if start_date_str:
             start_date = str_to_utc_datetime(datetime_str=start_date_str, format=DEFAULT_DATE_FORMAT)
             sd = start_date.replace(
                 hour=0, minute=0, second=0, microsecond=0, tzinfo=timezone.utc)
+
             history = {
                 'start_date': datetime_to_utc_str(sd, DEFAULT_DATE_FORMAT),
                 'end_date': datetime_to_utc_str(checkpoint, DEFAULT_DATE_FORMAT),
             }
+            self.logger.debug(f"checkpoint set to: {history['end_date']}")
+            self.logger.debug(f"history set to: {json.dumps(history)}")
+
             h_context.update_history(history=history)
             h_context.update_checkpoint(history['start_date'])
 

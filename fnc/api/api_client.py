@@ -1,15 +1,34 @@
 
 import traceback
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterator, List
+from typing import Any, Iterator, List, Union
 
-from requests.exceptions import *
+from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
 
-from fnc.api.endpoints import DetectionApi, Endpoint, EndpointKey, EntityApi, FncApi, SensorApi
-from fnc.global_variables import (CLIENT_DEFAULT_DOMAIN, CLIENT_DEFAULT_USER_AGENT, CLIENT_NAME, CLIENT_PROTOCOL, CLIENT_VERSION,
-                                  DEFAULT_DATE_FORMAT, POLLING_DEFAULT_DELAY, POLLING_MAX_DETECTION_EVENTS, POLLING_MAX_DETECTIONS,
-                                  POLLING_TRAINING_ACCOUNT_ID, POLLING_TRAINING_CUSTOMER_ID, REQUEST_DEFAULT_TIMEOUT, REQUEST_DEFAULT_VERIFY,
-                                  REQUEST_MAXIMUM_RETRY_ATTEMPT)
+from fnc.api.endpoints import (
+    DetectionApi,
+    Endpoint,
+    EndpointKey,
+    EntityApi,
+    FncApi,
+    SensorApi,
+)
+from fnc.global_variables import (
+    CLIENT_DEFAULT_DOMAIN,
+    CLIENT_DEFAULT_USER_AGENT,
+    CLIENT_NAME,
+    CLIENT_PROTOCOL,
+    CLIENT_VERSION,
+    DEFAULT_DATE_FORMAT,
+    POLLING_DEFAULT_DELAY,
+    POLLING_MAX_DETECTION_EVENTS,
+    POLLING_MAX_DETECTIONS,
+    POLLING_TRAINING_ACCOUNT_ID,
+    POLLING_TRAINING_CUSTOMER_ID,
+    REQUEST_DEFAULT_TIMEOUT,
+    REQUEST_DEFAULT_VERIFY,
+    REQUEST_MAXIMUM_RETRY_ATTEMPT,
+)
 from fnc.utils import datetime_to_utc_str, str_to_utc_datetime
 
 from ..errors import ErrorMessages, ErrorType, FncClientError
@@ -30,6 +49,13 @@ class ApiContext:
 
     def get_history(self):
         return self._history
+
+    def get_remaining_history(self):
+        history = self._history.copy()
+        if self._checkpoint:
+            history['start_date'] = self._checkpoint
+
+        return history
 
     def update_checkpoint(self, checkpoint: str):
         self._checkpoint = checkpoint
@@ -93,7 +119,7 @@ class FncApiClient:
 
         # Call Get_Detections endpoint with limit = 1
         try:
-            _ = self.call_endpoint(EndpointKey.GET_DETECTIONS, {'limit': 1})
+            _ = self.call_endpoint(EndpointKey.GET_SENSORS, {})
             self.logger.info("The API Token has been successfully validated.")
         except FncClientError as e:
             self.logger.error(f"API Token validation failed due to {e}.")
@@ -106,6 +132,22 @@ class FncApiClient:
 
     def get_logger(self):
         return self.logger
+
+    def _get_portal_url(self) -> str:
+        """
+        This method construct the portal url by mapping icebrg.io to fortindr.forticloud.com.
+        """
+
+        domain = self.domain
+        domain = domain.replace('icebrg.io', 'fortindr.forticloud.com')
+        # Prepare the url
+        if domain.startswith('-uat'):
+            # To allow use of uat environment
+            url = f"{self.protocol}://portal{domain}"
+        else:
+            url = f"{self.protocol}://portal.{domain}"
+
+        return url
 
     def get_url(self, e: Endpoint, api: FncApi, url_args: dict = {}) -> str:
         """
@@ -162,13 +204,13 @@ class FncApiClient:
             )
         return full_url
 
-    def get_endpoint_if_supported(self, endpoint: str | EndpointKey) -> tuple[Endpoint, FncApi]:
+    def get_endpoint_if_supported(self, endpoint: Union[str, EndpointKey]) -> tuple[Endpoint, FncApi]:
         """
         This method verify if the endpoint is supported by any of the defined APIs.
         If the endpoint is supported the endpoint's definition and the API are returned.
 
         Args:
-            endpoint (str | EndpointKey): The endpoint to be retrieved. It can be passed as the EndpointKey or just the name.
+            endpoint (Union[str, EndpointKey]): The endpoint to be retrieved. It can be passed as the EndpointKey or just the name.
 
         Raises:
             FncApiClientError: Error_Type ENDPOINT_ERROR if the Endpoint was not provided, defined or it is not supported.
@@ -273,7 +315,7 @@ class FncApiClient:
         args.update({'headers': self._get_headers()})
         return args
 
-    def _prepare_request(self, endpoint: str | EndpointKey, args: dict) -> tuple[Endpoint, dict]:
+    def _prepare_request(self, endpoint: Union[str, EndpointKey], args: dict, reduced_log: bool = False) -> tuple[Endpoint, dict]:
         """
         This method receive an endpoint and a dictionary of arguments it then verify that the endpoint is supported,
         that any required argument is present and that there is no unexpected argument. If the validation is passed,
@@ -281,7 +323,7 @@ class FncApiClient:
         with its value.
 
         Args:
-            endpoint (str | EndpointKey): endpoint to be called
+            endpoint (Union[str, EndpointKey]): endpoint to be called
             args (dict): arguments to be passed with the request
 
         Raises:
@@ -408,14 +450,14 @@ class FncApiClient:
 
         return need_retry and attempt <= REQUEST_MAXIMUM_RETRY_ATTEMPT
 
-    def call_endpoint(self, endpoint: str | EndpointKey, args: dict) -> dict:
+    def call_endpoint(self, endpoint: Union[str, EndpointKey], args: dict, reduced_log: bool = False) -> dict:
         """
         This method receives an endpoint and a dictionary of arguments. It will prepare
         and send the request to the received endpoint as well as validate the returned
         response returning the json response if it is valid
 
         Args:
-            endpoint (str | EndpointKey): Endpoint to where to send the request
+            endpoint (Union[str, EndpointKey]): Endpoint to where to send the request
             args (dict): dictionary with all the argument's values that need to passed with the request
 
         Raises:
@@ -424,6 +466,9 @@ class FncApiClient:
         Returns:
             dict:  Response's json
         """
+        # We avoid printing info and debug logs when the continuous calling is enriching
+        # detections with associated events
+
         endpoint_key_name = endpoint if isinstance(endpoint, str) else endpoint.name
         need_retry = False
         attempt = 0
@@ -432,7 +477,7 @@ class FncApiClient:
         args = args.copy()
 
         while attempt == 0 or need_retry:
-            if need_retry:
+            if need_retry and not reduced_log:
                 self.logger.info(f"Retrying...... [attempt #{attempt}]")
 
             response = None
@@ -445,17 +490,20 @@ class FncApiClient:
                     req_args=e_args['control_args'], body_args=e_args['body_args'], query_args=e_args['query_args']
                 )
 
-                self.logger.info(f"Sending request to {e.get_endpoint_key().name} endpoint.")
+                if not reduced_log:
+                    self.logger.info(f"Sending request to {e.get_endpoint_key().name} endpoint.")
 
                 self.rest_client.validate_request(req_args)
                 response = self.rest_client.send_request(req_args=req_args)
 
                 res_json = e.validate_response(response)
-                self.logger.info("Response successfully validated.")
+                if not reduced_log:
+                    self.logger.info("Response successfully validated.")
 
             except Exception as ex:
                 self.logger.error(f"The request to {endpoint_key_name} endpoint failed due to:")
-                self.logger.error("\n".join(traceback.format_exception(ex)))
+
+                self.logger.error(traceback.format_exc())
                 error = ex
 
             attempt += 1
@@ -483,7 +531,6 @@ class FncApiClient:
         polling_delay: int = None,
         checkpoint: str = None
     ) -> tuple[datetime, datetime]:
-
         # We try to get the start_date from the arguments or the checkpoint.
         # If none of them is provided we use the utc now - delay
         start_date_str = checkpoint or start_date_str or ""
@@ -492,7 +539,8 @@ class FncApiClient:
         polling_delay = polling_delay or POLLING_DEFAULT_DELAY
 
         now = datetime.now(tz=timezone.utc)
-        end_date = now - timedelta(minutes=polling_delay)
+        minutes: int = int(polling_delay)
+        end_date = now - timedelta(minutes=minutes)
         start_date = end_date
 
         sd = None
@@ -579,7 +627,7 @@ class FncApiClient:
                 if 'offset' not in polling_args or polling_args['offset'] < 0:
                     polling_args['offset'] = 0
                 self.logger.info(
-                    "Using arguments received in the context.\n" +
+                    "Using arguments received in the context. " +
                     "If this is not the expected behavior, ensure the context's args are cleared before polling."
                 )
                 return polling_args
@@ -611,24 +659,30 @@ class FncApiClient:
             polling_args['account_uuid'] = args['account_uuid'],
 
         muted_rules = str(args.get('pull_muted_rules',
-                          polling_args['muted_rule'])).lower()
+                          polling_args['muted_rule'])).strip().lower()
         if muted_rules == 'all':
-            polling_args.pop('muted_rule')
+            polling_args.pop('muted_rule', None)
         else:
+            if muted_rules in ['muted', 'unmuted']:
+                muted_rules = 'true' if muted_rules == 'muted' else 'false'
             polling_args['muted_rule'] = muted_rules
 
         muted_devices = str(args.get('pull_muted_devices',
-                            polling_args['muted_device'])).lower()
+                            polling_args['muted_device'])).strip().lower()
         if muted_devices == 'all':
-            polling_args.pop('muted_device')
+            polling_args.pop('muted_device', None)
         else:
+            if muted_devices in ['muted', 'unmuted']:
+                muted_devices = 'true' if muted_devices == 'muted' else 'false'
             polling_args['muted_device'] = muted_devices
 
         muted = str(args.get('pull_muted_detections',
-                    polling_args['muted'])).lower()
+                    polling_args['muted'])).strip().lower()
         if muted == 'all':
-            polling_args.pop('muted')
+            polling_args.pop('muted', None)
         else:
+            if muted in ['muted', 'unmuted']:
+                muted = 'true' if muted == 'muted' else 'false'
             polling_args['muted'] = muted
 
         status = str(args.get('status', polling_args['status'])).lower()
@@ -690,6 +744,9 @@ class FncApiClient:
         detection.update({'rule_severity': rule['severity']})
         detection.update({'rule_confidence': rule['confidence']})
         detection.update({'rule_category': rule['category']})
+        detection.update({'rule_primary_attack_id': rule['primary_attack_id']})
+        detection.update({'rule_secondary_attack_id': rule['secondary_attack_id']})
+        detection.update({'rule_url': f"{self._get_portal_url()}/detections/rules?rule_uuid={rule['uuid']}"})
 
         if include_description:
             detection.update({'rule_description': rule['description']})
@@ -697,11 +754,19 @@ class FncApiClient:
         if include_signature:
             detection.update({'rule_signature': rule['query_signature']})
 
-    def _get_entity_information(self, entity: str, fetch_pdns: bool = False, fetch_dhcp: bool = False, filter_training: bool = True) -> dict:
+    def get_entity_information(
+        self,
+        entity: str,
+        fetch_pdns: bool = False,
+        fetch_dhcp: bool = False,
+        fetch_vt: bool = False,
+        filter_training: bool = True
+    ) -> dict:
         result: dict = {}
-        if not fetch_dhcp and not fetch_pdns:
+        if not fetch_dhcp and not fetch_pdns and not fetch_vt:
             return result
 
+        result.update({'entity': entity})
         self.logger.debug(f'Retrieving information for entity {entity}.')
 
         # Get PDNS/VT/DHCP info if requested
@@ -710,19 +775,20 @@ class FncApiClient:
             try:
                 pdns_data = self.call_endpoint(
                     endpoint=EndpointKey.GET_ENTITY_PDNS, args={'entity': entity})
-                pdns: list = pdns_data.get('pdns_data', [])
+                pdns: list = pdns_data.get('passivedns', [])
                 if filter_training:
                     pdns = list(filter(
                         lambda v: v.get('account_uuid', '') != POLLING_TRAINING_ACCOUNT_ID, pdns))
 
-                result.update({"PDNS": pdns})
+                result.update({"pdns": pdns})
 
                 self.logger.debug(
                     "Entity's pdns information successfully retrieved.")
-            except FncClientError as e:
+
+            except FncClientError:
                 # If the request fails for a particular entity, we log it but continue with the execution.
                 self.logger.error(f"PDNS information for entity {entity} cannot be added due to:")
-                self.logger.error("\n".join(traceback.format_exception(e)))
+                self.logger.error(traceback.format_exc())
 
         if fetch_dhcp:
             self.logger.debug("Fetching entity's DHCP information.")
@@ -738,24 +804,47 @@ class FncApiClient:
 
                 self.logger.debug(
                     "Entity's DHCP information successfully retrieved.")
-            except FncClientError as e:
+            except FncClientError:
                 # If the request fails for a particular entity, we log it but continue with the execution.
                 self.logger.error(f"DHCP information for entity {entity} cannot be added due to:")
-                self.logger.error("\n".join(traceback.format_exception(e)))
+                self.logger.error(traceback.format_exc())
+
+        if fetch_vt:
+            self.logger.debug("Fetching entity's Virus Total information.")
+            try:
+                vt_data = self.call_endpoint(
+                    endpoint=EndpointKey.GET_ENTITY_VIRUS_TOTAL, args={'entity': entity})
+                vt: list = vt_data.get('vt_response', [])
+
+                result.update({"vt": vt})
+
+                self.logger.debug(
+                    "Entity's Virus Total information successfully retrieved.")
+            except FncClientError:
+                # If the request fails for a particular entity, we log it but continue with the execution.
+                self.logger.error(f"Virus Total information for entity {entity} cannot be added due to:")
+                self.logger.error(traceback.format_exc())
 
         return result
 
-    def _process_response(self, response: dict, entities_info: dict = None, args: dict = None) -> dict:
+    def _get_as_bool(self, value):
+        if type(value) is str and value.title() in ['True', 'False']:
+            return eval(value.title())
+
+        if type(value) is bool:
+            return value
+
+        return False
+
+    def _process_response(self, response: dict, args: dict = None):
         # Getting instructions from the arguments
         args = args or {}
-        include_description = args.get('include_description', False)
-        include_signature = args.get('include_signature', False)
-        fetch_pdns = args.get('include_pdns', False)
-        fetch_dhcp = args.get('include_dhcp', False)
-        include_events = args.get('include_events', False)
-        filter_training = args.get('filter_training_detections', True)
+        include_description = self._get_as_bool(args.get('include_description'))
+        include_signature = self._get_as_bool(args.get('include_signature'))
+        include_events = self._get_as_bool(args.get('include_events'))
 
         detection_events = {}
+        total_events = 0
 
         dCount = len(response['detections']) if "detections" in response else 0
         if dCount == 0:
@@ -784,31 +873,6 @@ class FncApiClient:
         self.logger.info(
             "Rules' information successfully added to the detections.")
 
-        # Enrich detection with additional entity's information
-        if fetch_dhcp or fetch_pdns:
-            entities_info = entities_info or {}
-            self.logger.debug(
-                " Enriching detection with additional entity's information.")
-
-            for detection in response['detections']:
-                entity = detection['device_ip']
-                if entity not in entities_info:
-                    # Add the PDNS and DHCP information if requested
-                    entity_info = self._get_entity_information(
-                        entity=entity,
-                        fetch_dhcp=fetch_dhcp,
-                        fetch_pdns=fetch_pdns,
-                        filter_training=filter_training
-                    )
-                    entities_info[entity] = entity_info
-                else:
-                    self.logger.debug(f"Scaping {entity} since it was already requested.")
-
-                detection.update(entities_info.get(entity))
-
-            self.logger.info(
-                "Entity's information successfully added to the detections.")
-
         # Add detection's associated events to the response
         if include_events:
             self.logger.debug("Adding Detection's associated events.")
@@ -817,18 +881,19 @@ class FncApiClient:
             for detection in response['detections']:
                 total += 1
                 try:
-                    detection_events[detection['uuid']] = self._get_detection_events(
-                        detection['uuid'])
-                except FncClientError as e:
+                    events = self._get_detection_events(detection['uuid'])
+                    total_events = total_events + len(events)
+                    detection_events.update({detection['uuid']: events})
+                except FncClientError:
                     failed += 1
                     # If the request for associated events fails for a particular detection, we log it but continue with the execution.
                     self.logger.error(f"Detection's events request for {detection['uuid']} failed due to:")
-                    self.logger.error("\n".join(traceback.format_exception(e)))
+                    self.logger.error(traceback.format_exc())
 
-            self.logger.info(f"Associated events for ({total - failed} out of {total}) detections were successfully added to the response.")
+            self.logger.info(f"{total - failed} out of {total}) detections were successfully processed.")
+            self.logger.info(f"{total_events} associated events were successfully added to the response.")
 
-        response['events'] = detection_events
-        return entities_info
+        response.update({'events': detection_events})
 
     def _get_detection_events(self, detection_id: str) -> list:
         detection_events = []
@@ -842,7 +907,7 @@ class FncApiClient:
         while 'events' not in response or len(response['events']) == POLLING_MAX_DETECTION_EVENTS:
             try:
                 response = self.call_endpoint(
-                    endpoint=EndpointKey.GET_DETECTION_EVENTS, args=args.copy())
+                    endpoint=EndpointKey.GET_DETECTION_EVENTS, args=args.copy(), reduced_log=True)
                 args['offset'] = args.get(
                     'offset', 0) + POLLING_MAX_DETECTION_EVENTS
                 detection_events.extend(response['events'])
@@ -900,7 +965,6 @@ class FncApiClient:
         context = context or ApiContext()
 
         response = {}
-        entities_info = {}
 
         limit = args.get('limit', 0)
         is_limited = limit > 0
@@ -926,7 +990,7 @@ class FncApiClient:
 
                 if 'detections' in response and len(response['detections']) > 0:
                     # Process the response enriching it if requested
-                    entities_info = self._process_response(response=response, entities_info=entities_info, args=args)
+                    self._process_response(response=response, args=args)
 
                     offset = polling_args.get('offset', 0)
                     polling_args['offset'] = offset + len(response['detections'])
@@ -942,7 +1006,7 @@ class FncApiClient:
                 error_message = 'Detections cannot be pulled due to:'
                 if e.error_type != ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR:
                     self.logger.error(f"{error_message} \n {str(e)}")
-                    # self.logger.error("\n".join(traceback.format_exception(e)))
+                    # self.logger.error(traceback.format_exc())
                     raise e
                 else:
                     self.logger.info(f"{error_message} \n {str(e)}")
@@ -950,7 +1014,7 @@ class FncApiClient:
                     return
             except Exception as e:
                 self.logger.error("Detections polling failed unexpectedly.")
-                self.logger.error("\n".join(traceback.format_exception(e)))
+                self.logger.error(traceback.format_exc())
                 raise FncClientError(
                     error_type=ErrorType.GENERIC_ERROR,
                     error_message=ErrorMessages.GENERIC_ERROR_MESSAGE,
@@ -1054,10 +1118,9 @@ class FncApiClient:
         args['start_date'] = start_date_str
         args['end_date'] = end_date_str
 
-        # Required to check if enrichment is needed
-        fetch_pdns = args.get('include_pdns', False)
-        fetch_dhcp = args.get('include_dhcp', False)
-        include_events = args.get('include_events', False)
+        # Required to check if enrichment is needed. If enrichtment is not needed, no extra API call need to be performed
+        # and we can retrieve all the detections without caring for the limit
+        need_enrichment = self._get_as_bool(args.get('include_events'))
         limit = 0
 
         # Start delta as the lesser of 1 day and the entire history time window
@@ -1067,7 +1130,6 @@ class FncApiClient:
 
         # If delta is less than 1 hour we do not care about the limit and pull the entire interval
         # otherwise get the limit and the end date for the first piece to pull
-        need_enrichment = fetch_pdns or fetch_dhcp or include_events
         if delta > timedelta(hours=1) and need_enrichment:
             previous_checkpoint = start_date_str
 
@@ -1078,9 +1140,9 @@ class FncApiClient:
             self.get_logger().debug("Enrichment is not required or the interval is to short. The limit will be ignored.")
             delta = None
             ed = end_date
-            args.pop('limit')
+            args.pop('limit', None)
 
-        # We pull detections one day at a time until we the limit is reached
+        # We pull detections one day at a time until the limit is reached
         # If the limit is overpassed in the first piece of 1 day, we start
         # dividing the delta by 2 until we do not overpass the limit or delta
         # is less than 1 hour. At this moment, we pull everything regardless the
@@ -1096,7 +1158,7 @@ class FncApiClient:
                     context.clear_args()
                     args['end_date'] = datetime_to_utc_str(ed)
 
-                    self.get_logger().info(f"Polling history from {context.get_checkpoint()} to {args['end_date']})")
+                    self.get_logger().info("Polling next piece of the historical data.")
                     count = 0
                     for detections in self.continuous_polling(context=context, args=args):
                         # we pull detections for the current piece and update the limit appropriately
@@ -1129,8 +1191,20 @@ class FncApiClient:
                 if e.error_type == ErrorType.POLLING_LIMIT_OVERPASSED:
                     if delta <= timedelta(hours=1):
                         # If the interval is less than 1h we do not split it and stop iteration
-                        self.get_logger().info(
-                            f"The limit of {limit} was overpassed but the interval is to short to split. The iteration will be ended.")
+                        if d_count > 0:
+                            self.get_logger().info(
+                                f"The limit of {limit} was overpassed but the interval is to short to split. The iteration will be ended.")
+                        else:
+                            self.get_logger().info(
+                                f"The limit of {limit} was overpassed but the interval is to short to split. Returning a single hour worth of detections.")
+                            lmt = args.pop('limit')
+                            for detections in self.continuous_polling(context=context, args=args):
+                                # we pull detections for the current piece and update the limit appropriately
+
+                                count += len(detections.get('detections', []))
+                                yield detections
+                            args['limit'] = lmt
+                            d_count += count
                         is_done = True
                     elif not d_count or delta == interval:
                         self.get_logger().info(f"The limit of {limit} was overpassed. Splitting the interval in half.")
