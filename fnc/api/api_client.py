@@ -943,7 +943,7 @@ class FncApiClient:
                 error_data={'limit': limit, 'count': response['total_count']}
             )
 
-    def continuous_polling(self, context: ApiContext = None, args: dict = None) -> Iterator[List[dict]]:
+    def continuous_polling(self, context: ApiContext = None, args: dict = None) -> Iterator[dict]:
         self.logger.info("Starting continuous polling execution.")
         args = args.copy() or {}
         polling_args = {}
@@ -1069,7 +1069,7 @@ class FncApiClient:
 
         return history_context, context
 
-    def poll_history(self, context: ApiContext = None, args: dict = None, interval: timedelta = timedelta(days=1)) -> Iterator[List[dict]]:
+    def poll_history(self, context: ApiContext = None, args: dict = None, interval: timedelta = timedelta(days=1)) -> Iterator[dict]:
         # Raise Exception if No Context with History is passed
         if not context or not context.get_history():
             self.logger.error("A splitted context with the history time window is required to pull history")
