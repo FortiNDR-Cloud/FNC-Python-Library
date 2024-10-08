@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='com.fortinet.fndrc.integrations.python_client',
-    version='1.0.2',
+    version='1.0.3',
     packages=['fnc', 'fnc.api', 'fnc.metastream'],
     url='fortinet.com',
     license='',
