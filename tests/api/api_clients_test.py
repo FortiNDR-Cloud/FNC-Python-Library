@@ -1425,7 +1425,6 @@ def test_prepare_continuous_polling_validate_args_before_return_them(mocker):
         'include_description': True,
         'include_signature': True,
         'include_events': True,
-        'filter_training_detections': True,
         'start_date': '1 hour'
     }
 
@@ -1465,7 +1464,6 @@ def test_continuous_polling_including_nothing(mocker):
         'include_description': False,
         'include_signature': False,
         'include_events': False,
-        'filter_training_detections': False,
         'start_date': start_date_str
     }
     api_token = 'fake_api_token'
@@ -1537,7 +1535,6 @@ def test_continuous_polling_including_all(mocker):
         'include_description': True,
         'include_signature': True,
         'include_events': True,
-        'filter_training_detections': True,
         'start_date': '1 hour'
     }
     api_token = 'fake_api_token'
@@ -1618,7 +1615,6 @@ def test_continuous_polling_failure_get_detections_fails(mocker):
         'include_description': True,
         'include_signature': True,
         'include_events': True,
-        'filter_training_detections': True,
         'start_date': '1 hour'
     }
     api_token = 'fake_api_token'
@@ -1690,7 +1686,6 @@ def test_get_splitted_context_past_start_and_end_dates(mocker):
         'include_description': random.choice([True, False]),
         'include_signature': random.choice([True, False]),
         'include_events': random.choice([True, False]),
-        'filter_training_detections': random.choice([True, False])
     }
     api_token = 'fake_api_token'
     domain = 'fake_domain'
@@ -1742,7 +1737,6 @@ def test_get_splitted_context_past_start_date_future_end_date(mocker):
         'include_description': random.choice([True, False]),
         'include_signature': random.choice([True, False]),
         'include_events': random.choice([True, False]),
-        'filter_training_detections': random.choice([True, False])
     }
     api_token = 'fake_api_token'
     domain = 'fake_domain'
@@ -1791,7 +1785,6 @@ def test_get_splitted_context_past_start_date_no_end_date(mocker):
         'include_description': random.choice([True, False]),
         'include_signature': random.choice([True, False]),
         'include_events': random.choice([True, False]),
-        'filter_training_detections': random.choice([True, False])
     }
     api_token = 'fake_api_token'
     domain = 'fake_domain'
@@ -1834,7 +1827,6 @@ def test_get_splitted_context_no_start_date_no_end_date(mocker):
         'include_description': random.choice([True, False]),
         'include_signature': random.choice([True, False]),
         'include_events': random.choice([True, False]),
-        'filter_training_detections': random.choice([True, False])
     }
     api_token = 'fake_api_token'
     domain = 'fake_domain'
@@ -1881,7 +1873,6 @@ def test_get_splitted_context_future_start_date_future_end_date(mocker):
         'include_description': random.choice([True, False]),
         'include_signature': random.choice([True, False]),
         'include_events': random.choice([True, False]),
-        'filter_training_detections': random.choice([True, False])
     }
     api_token = 'fake_api_token'
     domain = 'fake_domain'
@@ -1989,7 +1980,6 @@ def test_poll_history_succeed_no_enrichment(mocker):
         'include_description': True,
         'include_signature': True,
         'include_events': False,
-        'filter_training_detections': True,
         'limit': limit
     }
     api_token = 'fake_api_token'
@@ -2048,7 +2038,6 @@ def test_poll_history_succeed_enrichment(mocker):
         'include_description': False,
         'include_signature': False,
         'include_events': True,
-        'filter_training_detections': False,
         'limit': limit * days
     }
     api_token = 'fake_api_token'
