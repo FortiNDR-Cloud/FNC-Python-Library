@@ -18,7 +18,6 @@ try:
         'include_pdns': True,
         'include_dhcp': True,
         'include_events': True,
-        'filter_training_detections': True,
         'limit': 500,
         'start_date': '2024-01-01T00:00:00.000000Z'
     }

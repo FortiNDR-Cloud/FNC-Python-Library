@@ -23,8 +23,6 @@ from fnc.global_variables import (
     POLLING_DEFAULT_DELAY,
     POLLING_MAX_DETECTION_EVENTS,
     POLLING_MAX_DETECTIONS,
-    POLLING_TRAINING_ACCOUNT_ID,
-    POLLING_TRAINING_CUSTOMER_ID,
     REQUEST_DEFAULT_TIMEOUT,
     REQUEST_DEFAULT_VERIFY,
     REQUEST_MAXIMUM_RETRY_ATTEMPT,
@@ -760,7 +758,6 @@ class FncApiClient:
         fetch_pdns: bool = False,
         fetch_dhcp: bool = False,
         fetch_vt: bool = False,
-        filter_training: bool = True
     ) -> dict:
         result: dict = {}
         if not fetch_dhcp and not fetch_pdns and not fetch_vt:
@@ -776,9 +773,6 @@ class FncApiClient:
                 pdns_data = self.call_endpoint(
                     endpoint=EndpointKey.GET_ENTITY_PDNS, args={'entity': entity})
                 pdns: list = pdns_data.get('passivedns', [])
-                if filter_training:
-                    pdns = list(filter(
-                        lambda v: v.get('account_uuid', '') != POLLING_TRAINING_ACCOUNT_ID, pdns))
 
                 result.update({"pdns": pdns})
 
@@ -796,9 +790,6 @@ class FncApiClient:
                 dhcp_data = self.call_endpoint(
                     endpoint=EndpointKey.GET_ENTITY_DHCP, args={'entity': entity})
                 dhcp: list = dhcp_data.get('dhcp', [])
-                if filter_training:
-                    dhcp = list(filter(
-                        lambda v: v.get('customer_id', '') != POLLING_TRAINING_CUSTOMER_ID, dhcp))
 
                 result.update({"dhcp": dhcp})
 
@@ -952,7 +943,7 @@ class FncApiClient:
                 error_data={'limit': limit, 'count': response['total_count']}
             )
 
-    def continuous_polling(self, context: ApiContext = None, args: dict = None) -> Iterator[List[dict]]:
+    def continuous_polling(self, context: ApiContext = None, args: dict = None) -> Iterator[dict]:
         self.logger.info("Starting continuous polling execution.")
         args = args.copy() or {}
         polling_args = {}
@@ -1078,7 +1069,7 @@ class FncApiClient:
 
         return history_context, context
 
-    def poll_history(self, context: ApiContext = None, args: dict = None, interval: timedelta = timedelta(days=1)) -> Iterator[List[dict]]:
+    def poll_history(self, context: ApiContext = None, args: dict = None, interval: timedelta = timedelta(days=1)) -> Iterator[dict]:
         # Raise Exception if No Context with History is passed
         if not context or not context.get_history():
             self.logger.error("A splitted context with the history time window is required to pull history")
