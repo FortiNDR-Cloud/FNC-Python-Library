@@ -14,15 +14,6 @@ __all__ = ['datetime_to_utc_str', 'str_to_utc_datetime']
 
 from datetime import datetime
 
-# Example with the standard date and time format
-date_str = '2023-02-28 14:30:00'
-date_format = '%Y-%m-%d %H:%M:%S'
-
-date_obj = datetime.strptime(date_str, date_format)
-print(date_obj)
-
-
-
 
 def datetime_to_utc_str(datetime_obj: datetime = None, format: str = None) -> str:
     if not datetime_obj:
@@ -44,7 +35,6 @@ def datetime_to_utc_str(datetime_obj: datetime = None, format: str = None) -> st
             error_data={'error': error},
             exception=e
         ) from e
-
 
 def str_to_utc_datetime(datetime_str: str = None, format: str = None) -> datetime:
     if not datetime_str:
