@@ -1,7 +1,7 @@
 
 import traceback
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterator, List, Union
+from typing import Any, Dict, Iterator, List, Tuple, Union
 
 from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
 
@@ -35,14 +35,14 @@ from .rest_clients import BasicRestClient, FncRestClient
 
 
 class ApiContext:
-    _polling_args: dict
+    _polling_args: Dict
 
     def __init__(self):
         self._checkpoint = ''
         self._history = {}
         self._polling_args = {}
 
-    def update_history(self, history: dict):
+    def update_history(self, history: Dict):
         self._history = history or None
 
     def get_history(self):
@@ -61,7 +61,7 @@ class ApiContext:
     def get_checkpoint(self):
         return self._checkpoint
 
-    def update_polling_args(self, args: dict):
+    def update_polling_args(self, args: Dict):
         self._polling_args = args or None
 
     def get_polling_args(self):
@@ -73,7 +73,7 @@ class ApiContext:
 
 class FncApiClient:
 
-    supported_api: list[FncApi] = [SensorApi(), DetectionApi(), EntityApi()]
+    supported_api: List[FncApi] = [SensorApi(), DetectionApi(), EntityApi()]
 
     domain: str
     protocol: str = CLIENT_PROTOCOL
@@ -81,7 +81,7 @@ class FncApiClient:
     user_agent: str
     rest_client: FncRestClient
     logger: FncClientLogger
-    default_control_args: dict
+    default_control_args: Dict
 
     def __init__(
         self,
@@ -147,7 +147,7 @@ class FncApiClient:
 
         return url
 
-    def get_url(self, e: Endpoint, api: FncApi, url_args: dict = {}) -> str:
+    def get_url(self, e: Endpoint, api: FncApi, url_args: Dict = {}) -> str:
         """
         This method construct the full url by gathering all the required information from the API and the endpoint
         and evaluating any existing argument in the url.
@@ -155,7 +155,7 @@ class FncApiClient:
         Args:
             e (Endpoint): The definition of the endpoint that want to be reached with this url.
             api (FncApi): The definition of the API supporting the provided endpoint
-            url_args (dict, optional): the values for any existing argument in the url. Defaults to {}.
+            url_args (Dict, optional): the values for any existing argument in the url. Defaults to {}.
 
         Raises:
             FncApiClientError: Error_Type.API_VALIDATION_ERROR is raised if the provided API does not have the attribute name defined.
@@ -202,7 +202,7 @@ class FncApiClient:
             )
         return full_url
 
-    def get_endpoint_if_supported(self, endpoint: Union[str, EndpointKey]) -> tuple[Endpoint, FncApi]:
+    def get_endpoint_if_supported(self, endpoint: Union[str, EndpointKey]) -> Tuple[Endpoint, FncApi]:
         """
         This method verify if the endpoint is supported by any of the defined APIs.
         If the endpoint is supported the endpoint's definition and the API are returned.
@@ -215,7 +215,7 @@ class FncApiClient:
             FncApiClientError: Error_Type ENDPOINT_VALIDATION_ERROR if the provided endpoint is supported by most than one API.
 
         Returns:
-            tuple[Endpoint, FncApi]: Returns the Endpoint's definition and the API that supports it
+            Tuple[Endpoint, FncApi]: Returns the Endpoint's definition and the API that supports it
         """
 
         k = None
@@ -251,9 +251,9 @@ class FncApiClient:
             k = endpoint
 
         # Get any API supporting the provided endpoint
-        filtered: list = list(
+        filtered: List = list(
             filter(lambda a: k in a.get_supported_endpoints(), self.supported_api))
-        # filtered: list = [
+        # filtered: List = [
         #     supported_endpoint for supported_api in self.supported_api
         #     for supported_endpoint in supported_api.get_supported_endpoints()
         # ]
@@ -280,12 +280,12 @@ class FncApiClient:
                 error_data={'endpoint': endpoint}
             )
 
-    def _get_headers(self) -> dict:
+    def _get_headers(self) -> Dict:
         """
         This method returns the dictionary containing all the required headers.
 
         Returns:
-            dict: Dictionary containing the headers
+            Dict: Dictionary containing the headers
         """
         return {
             'Authorization': f'IBToken {self.api_token}',
@@ -293,8 +293,8 @@ class FncApiClient:
             'Content-Type': 'application/json',
         }
 
-    def set_default_control_args(self, args: dict = None):
-        self.default_control_args: dict = {
+    def set_default_control_args(self, args: Dict = None):
+        self.default_control_args: Dict = {
             'method': 'GET',
             'verify': REQUEST_DEFAULT_VERIFY,
             'timeout': REQUEST_DEFAULT_TIMEOUT,
@@ -302,18 +302,18 @@ class FncApiClient:
         if args:
             self.default_control_args = {**self.default_control_args, **args}
 
-    def get_default_control_args(self) -> dict:
+    def get_default_control_args(self) -> Dict:
         """
         This method returns a dictionary containing all the default control arguments used by the client.
 
         Returns:
-            dict: Dictionary containing the default control arguments
+            Dict: Dictionary containing the default control arguments
         """
         args = self.default_control_args.copy()
         args.update({'headers': self._get_headers()})
         return args
 
-    def _prepare_request(self, endpoint: Union[str, EndpointKey], args: dict, reduced_log: bool = False) -> tuple[Endpoint, dict]:
+    def _prepare_request(self, endpoint: Union[str, EndpointKey], args: Dict, reduced_log: bool = False) -> Tuple[Endpoint, Dict]:
         """
         This method receive an endpoint and a dictionary of arguments it then verify that the endpoint is supported,
         that any required argument is present and that there is no unexpected argument. If the validation is passed,
@@ -322,13 +322,13 @@ class FncApiClient:
 
         Args:
             endpoint (Union[str, EndpointKey]): endpoint to be called
-            args (dict): arguments to be passed with the request
+            args (Dict): arguments to be passed with the request
 
         Raises:
             FncApiClientError: Reraise any exception raised during the endpoint validation or the calculation of the full url.
 
         Returns:
-            tuple[Endpoint, dict]: Returns the definition of the endpoint to be called and a dictionary with the arguments splitted as:
+            Tuple[Endpoint, Dict]: Returns the definition of the endpoint to be called and a dictionary with the arguments splitted as:
             'url_args', 'query_args', 'body_args' and 'control_args'
         """
         e: Endpoint = None
@@ -370,24 +370,24 @@ class FncApiClient:
 
         return (e, e_args)
 
-    def _get_rest_client_arguments(self, req_args: dict = None, query_args: dict = None, body_args: Any = None) -> dict:
+    def _get_rest_client_arguments(self, req_args: Dict = None, query_args: Dict = None, body_args: Any = None) -> Dict:
         """
         This method get the request arguments and create a new dictionary with the arguments as they are expected by the Rest Client.
 
         Args:
-            req_args (dict, optional): Arguments that control the request. Defaults to None.
-            query_args (dict, optional): Arguments to be passed in the query string. Defaults to None.
+            req_args (Dict, optional): Arguments that control the request. Defaults to None.
+            query_args (Dict, optional): Arguments to be passed in the query string. Defaults to None.
             body_args (Any, optional): Arguments to be passed in the body. Defaults to None.
 
         Returns:
-            dict: New dictionary with the arguments as they are expected by the Rest Client
+            Dict: New dictionary with the arguments as they are expected by the Rest Client
         """
         requests_args = {}
         requests_args.update(req_args)
         if query_args:
             requests_args['params'] = query_args
         if body_args:
-            if isinstance(body_args, (dict, list)):
+            if isinstance(body_args, (Dict, List)):
                 requests_args['json'] = body_args
             else:
                 requests_args['data'] = str(body_args)
@@ -448,7 +448,7 @@ class FncApiClient:
 
         return need_retry and attempt <= REQUEST_MAXIMUM_RETRY_ATTEMPT
 
-    def call_endpoint(self, endpoint: Union[str, EndpointKey], args: dict, reduced_log: bool = False) -> dict:
+    def call_endpoint(self, endpoint: Union[str, EndpointKey], args: Dict, reduced_log: bool = False) -> Dict:
         """
         This method receives an endpoint and a dictionary of arguments. It will prepare
         and send the request to the received endpoint as well as validate the returned
@@ -456,13 +456,13 @@ class FncApiClient:
 
         Args:
             endpoint (Union[str, EndpointKey]): Endpoint to where to send the request
-            args (dict): dictionary with all the argument's values that need to passed with the request
+            args (Dict): dictionary with all the argument's values that need to passed with the request
 
         Raises:
             FncApiClientError: If anything fails during the request
 
         Returns:
-            dict:  Response's json
+            Dict:  Response's json
         """
         # We avoid printing info and debug logs when the continuous calling is enriching
         # detections with associated events
@@ -528,7 +528,7 @@ class FncApiClient:
         end_date_str: str = None,
         polling_delay: int = None,
         checkpoint: str = None
-    ) -> tuple[datetime, datetime]:
+    ) -> Tuple[datetime, datetime]:
         # We try to get the start_date from the arguments or the checkpoint.
         # If none of them is provided we use the utc now - delay
         start_date_str = checkpoint or start_date_str or ""
@@ -591,12 +591,12 @@ class FncApiClient:
 
         return start_date, end_date
 
-    def get_default_polling_args(self) -> dict:
+    def get_default_polling_args(self) -> Dict:
         """
         This method returns a dictionary containing all the default arguments for the continuous polling.
 
         Returns:
-            dict: Dictionary containing the default arguments for the continuous polling
+            Dict: Dictionary containing the default arguments for the continuous polling
         """
         return {
             'status': 'active',
@@ -610,12 +610,12 @@ class FncApiClient:
             'offset': 0
         }
 
-    def _prepare_continuous_polling(self, context: ApiContext = None, args: dict = None, limit: int = 0) -> dict:
+    def _prepare_continuous_polling(self, context: ApiContext = None, args: Dict = None, limit: int = 0) -> Dict:
         self.logger.info(
             "Preparing arguments for continuously polling Detections.")
 
         args = args or {}
-        polling_args: dict = None
+        polling_args: Dict = None
 
         if context and context.get_polling_args():
             # Try to get polling arguments from the context and validate them
@@ -634,7 +634,7 @@ class FncApiClient:
                     f'Arguments contained in the context will be ignored due to: \n [{e}]')
 
         # Getting arguments for the first call
-        polling_args: dict = self.get_default_polling_args()
+        polling_args: Dict = self.get_default_polling_args()
 
         if limit:
             lmt = limit if limit < POLLING_MAX_DETECTIONS else POLLING_MAX_DETECTIONS
@@ -693,7 +693,7 @@ class FncApiClient:
 
         return polling_args
 
-    def _validate_continuous_polling_args(self, args: dict):
+    def _validate_continuous_polling_args(self, args: Dict):
         self.logger.debug("Validating polling arguments.")
         failed = []
         # Verify Sort By is set to device_ip
@@ -735,7 +735,7 @@ class FncApiClient:
         else:
             self.logger.info("Polling arguments successfully validated.")
 
-    def _add_detection_rule(self, detection: dict, rules: dict, include_description: bool = False, include_signature: bool = False):
+    def _add_detection_rule(self, detection: Dict, rules: Dict, include_description: bool = False, include_signature: bool = False):
         rule = rules[detection['rule_uuid']]
 
         detection.update({'rule_name': rule['name']})
@@ -758,8 +758,8 @@ class FncApiClient:
         fetch_pdns: bool = False,
         fetch_dhcp: bool = False,
         fetch_vt: bool = False,
-    ) -> dict:
-        result: dict = {}
+    ) -> Dict:
+        result: Dict = {}
         if not fetch_dhcp and not fetch_pdns and not fetch_vt:
             return result
 
@@ -772,7 +772,7 @@ class FncApiClient:
             try:
                 pdns_data = self.call_endpoint(
                     endpoint=EndpointKey.GET_ENTITY_PDNS, args={'entity': entity})
-                pdns: list = pdns_data.get('passivedns', [])
+                pdns: List = pdns_data.get('passivedns', [])
 
                 result.update({"pdns": pdns})
 
@@ -789,7 +789,7 @@ class FncApiClient:
             try:
                 dhcp_data = self.call_endpoint(
                     endpoint=EndpointKey.GET_ENTITY_DHCP, args={'entity': entity})
-                dhcp: list = dhcp_data.get('dhcp', [])
+                dhcp: List = dhcp_data.get('dhcp', [])
 
                 result.update({"dhcp": dhcp})
 
@@ -805,7 +805,7 @@ class FncApiClient:
             try:
                 vt_data = self.call_endpoint(
                     endpoint=EndpointKey.GET_ENTITY_VIRUS_TOTAL, args={'entity': entity})
-                vt: list = vt_data.get('vt_response', [])
+                vt: List = vt_data.get('vt_response', [])
 
                 result.update({"vt": vt})
 
@@ -827,7 +827,7 @@ class FncApiClient:
 
         return False
 
-    def _process_response(self, response: dict, args: dict = None):
+    def _process_response(self, response: Dict, args: Dict = None):
         # Getting instructions from the arguments
         args = args or {}
         include_description = self._get_as_bool(args.get('include_description'))
@@ -847,7 +847,7 @@ class FncApiClient:
         response['rules'] = dict(
             map(lambda rule: (rule['uuid'], rule),  response['rules']))
 
-        detection: dict
+        detection: Dict
 
         self.logger.info(" Enriching detections.")
 
@@ -886,7 +886,7 @@ class FncApiClient:
 
         response.update({'events': detection_events})
 
-    def _get_detection_events(self, detection_id: str) -> list:
+    def _get_detection_events(self, detection_id: str) -> List:
         detection_events = []
         args = {
             'detection_uuid': detection_id,
@@ -913,7 +913,7 @@ class FncApiClient:
                         f"{count} Detection's associated events were retrieved for detection {detection_id}.")
         return detection_events
 
-    def _get_detections(self, args: dict) -> dict:
+    def _get_detections(self, args: Dict) -> Dict:
         start_date = args.get('created_or_shared_start_date', '')
         end_date = args.get('created_or_shared_end_date', '')
         offset = args.get('offset', 0)
@@ -929,7 +929,7 @@ class FncApiClient:
 
         return response
 
-    def _check_if_limit_is_overpassed(self, polling_args: dict, limit):
+    def _check_if_limit_is_overpassed(self, polling_args: Dict, limit):
         polling_args = polling_args.copy()
         polling_args['limit'] = 1
 
@@ -943,7 +943,7 @@ class FncApiClient:
                 error_data={'limit': limit, 'count': response['total_count']}
             )
 
-    def continuous_polling(self, context: ApiContext = None, args: dict = None) -> Iterator[dict]:
+    def continuous_polling(self, context: ApiContext = None, args: Dict = None) -> Iterator[Dict]:
         self.logger.info("Starting continuous polling execution.")
         args = args.copy() or {}
         polling_args = {}
@@ -1016,7 +1016,7 @@ class FncApiClient:
         self.logger.info(
             "Continuous polling execution successfully completed.")
 
-    def get_splitted_context(self, args: dict = None) -> tuple[ApiContext, ApiContext]:
+    def get_splitted_context(self, args: Dict = None) -> Tuple[ApiContext, ApiContext]:
         polling_delay = args.get('polling_delay', POLLING_DEFAULT_DELAY)
         start_date_str = args.get('start_date', '')
         end_date_str = args.get('end_date', '')
@@ -1069,7 +1069,7 @@ class FncApiClient:
 
         return history_context, context
 
-    def poll_history(self, context: ApiContext = None, args: dict = None, interval: timedelta = timedelta(days=1)) -> Iterator[dict]:
+    def poll_history(self, context: ApiContext = None, args: Dict = None, interval: timedelta = timedelta(days=1)) -> Iterator[Dict]:
         # Raise Exception if No Context with History is passed
         if not context or not context.get_history():
             self.logger.error("A splitted context with the history time window is required to pull history")

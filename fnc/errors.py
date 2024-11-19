@@ -1,4 +1,5 @@
 from enum import Enum, auto
+from typing import Dict
 
 
 class ErrorMessages:
@@ -84,10 +85,10 @@ class ErrorType(Enum):
 class FncClientError(Exception):
     error_type: ErrorType
     error_message: str
-    error_data: dict
+    error_data: Dict
     exception: Exception
 
-    def __init__(self, error_type: ErrorType, error_message: str, error_data: dict = None, exception: Exception = None):
+    def __init__(self, error_type: ErrorType, error_message: str, error_data: Dict = None, exception: Exception = None):
         self.error_data = error_data or {}
         self.error_message = error_message
         self.error_type = error_type
