@@ -1,12 +1,27 @@
 
 from datetime import datetime, timezone
 
-import dateparser
+try:
+    import dateparser
+except Exception:
+    #The dateparser library cannot be imported. Relative dates expressed in natural language cannot be supported
+    dateparser = None
 
 from .errors import ErrorMessages, ErrorType, FncClientError
 from .global_variables import DEFAULT_DATE_FORMAT
 
 __all__ = ['datetime_to_utc_str', 'str_to_utc_datetime']
+
+from datetime import datetime
+
+# Example with the standard date and time format
+date_str = '2023-02-28 14:30:00'
+date_format = '%Y-%m-%d %H:%M:%S'
+
+date_obj = datetime.strptime(date_str, date_format)
+print(date_obj)
+
+
 
 
 def datetime_to_utc_str(datetime_obj: datetime = None, format: str = None) -> str:
@@ -40,10 +55,15 @@ def str_to_utc_datetime(datetime_str: str = None, format: str = None) -> datetim
     try:
         datetime_obj = datetime.strptime(datetime_str, format)
     except Exception as e:
-        try:
-            datetime_obj = dateparser.parse(datetime_str, settings={'STRICT_PARSING': True, 'TIMEZONE': 'UTC'})
-        except Exception as ex:
-            error = f"Date '{datetime_str}' cannot be converted from str due to: {e}.\n Parsing it as a relative date also failed due to: {ex}."
+        error = f"Date '{datetime_str}' cannot be converted from str due to: {e}.\n"
+        if dateparser is not None:
+            try:
+                datetime_obj = dateparser.parse(datetime_str, settings={'STRICT_PARSING': True, 'TIMEZONE': 'UTC'})
+                error = ""
+            except Exception as ex:
+                error += f" Parsing it as a relative date also failed due to: {ex}."
+        
+        if error:
             raise ValueError(error)
 
     if not datetime_obj:
