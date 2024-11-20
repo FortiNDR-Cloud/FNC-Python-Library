@@ -1,5 +1,5 @@
 from enum import Enum, auto
-from typing import Union
+from typing import Dict, List, Tuple, Union
 
 from requests import Response
 from requests.exceptions import HTTPError, JSONDecodeError
@@ -58,7 +58,7 @@ class Endpoint:
     version: str
     endpoint: str
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def set_Logger(self, logger: FncClientLogger):
         self._logger = logger
@@ -92,65 +92,65 @@ class Endpoint:
         else:
             return f'{self.version}/{self.endpoint}'
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         """
         This method returns the definition for any argument expected in the query string.
         Must be implemented by the endpoint if any argument is expected in the query string.
         Returns:
-            dict: Dictionary containing the arguments' definition
+            Dict: Dictionary containing the arguments' definition
         """
         return {}
 
-    def get_body_args(self) -> dict:
+    def get_body_args(self) -> Dict:
         """
         This method returns the definition for any argument expected in the body.
         Must be implemented by the endpoint if any argument is expected in the body.
         Returns:
-            dict: Dictionary containing the arguments' definition
+            Dict: Dictionary containing the arguments' definition
         """
         return {}
 
-    def get_url_args(self) -> list:
+    def get_url_args(self) -> List:
         """
         This method returns the definition for any argument expected in the url.
         Must be implemented by the endpoint if any argument is expected on the url.
         Returns:
-            dict: Dictionary containing the arguments' definition
+            Dict: Dictionary containing the arguments' definition
         """
         return []
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         """
         This method returns the required arguments that control the request such as the method.
         Must be implemented by each endpoint since at least the method need to be provided.
 
         Returns:
-            dict: Dictionary containing the default control arguments
+            Dict: Dictionary containing the default control arguments
         """
         return {}
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         """
         This method returns a list of all the expected fields in a successful response.
 
         Returns:
-            list[str]: list of expected fields.
+            List[str]: list of expected fields.
         """
         return []
 
-    def evaluate(self, args: dict) -> dict:
+    def evaluate(self, args: Dict) -> Dict:
         """
         This method receive a dictionary with all the arguments' value and, using the endpoint definition,
         it split them according to where are they required (url, body, query string or control).
 
         Args:
-            args (dict): Dictionary with all the arguments' values
+            args (Dict): Dictionary with all the arguments' values
 
         Returns:
-            dict: A dictionary with the arguments splitted as: 'url_args', 'query_args', 'body_args' and 'control_args'
+            Dict: A dictionary with the arguments splitted as: 'url_args', 'query_args', 'body_args' and 'control_args'
         """
 
-        final_args: dict = {
+        final_args: Dict = {
             'url_args': None,
             'query_args': None,
             'body_args': None,
@@ -183,21 +183,21 @@ class Endpoint:
         # Return the all the arguments separated by where are they required url, body, query string or control
         return final_args
 
-    def _evaluate_arguments(self, to_evaluate: Union[dict, list], args: dict) -> dict:
+    def _evaluate_arguments(self, to_evaluate: Union[Dict, List], args: Dict) -> Dict:
         """
         This method filter the arguments (args) leaving only those that are included in the arguments definition (to_evaluate).
-        If the expected argument allows multiple values, its value (comma separated str) is converted to a list.
+        If the expected argument allows multiple values, its value (comma separated str) is converted to a List.
         Any returned argument is removed from the original dictionary.
 
         Args:
-            to_evaluate (dict): dictionary with the definition for all the expected arguments
-            args (dict): dictionary with all the arguments that need to be filtered
+            to_evaluate (Dict): dictionary with the definition for all the expected arguments
+            args (Dict): dictionary with all the arguments that need to be filtered
 
         Returns:
-            dict: Returns a dictionary containing only the arguments that are expected
+            Dict: Returns a dictionary containing only the arguments that are expected
         """
         res = {}
-        is_list = isinstance(to_evaluate, list)
+        is_list = isinstance(to_evaluate, List)
         for arg in to_evaluate:
             value = args.pop(arg, None)
             if value is not None:
@@ -214,13 +214,13 @@ class Endpoint:
 
         return res
 
-    def validate(self, to_validate: dict):
+    def validate(self, to_validate: Dict):
         """
         This method receive a dictionary with the arguments and verify that any required argument is present and
         that there is no unexpected argument.
 
         Args:
-            to_validate (dict): The dictionary containing all the arguments to be validated.
+            to_validate (Dict): The dictionary containing all the arguments to be validated.
 
         Raises:
             FncApiClientError: Error_Type ENDPOINT_VALIDATION_ERROR if there is any missing or unexpected argument.
@@ -275,20 +275,20 @@ class Endpoint:
                 error_data={'endpoint': self.get_endpoint_key().name, 'missing': missing, 'unexpected': unexpected, 'invalid': invalid}
             )
 
-    def _validate_argument(self, to_validate: dict, args_definition: Union[dict, list], requires_all: bool = False) -> tuple[list, list, list]:
+    def _validate_argument(self, to_validate: Dict, args_definition: Union[Dict, List], requires_all: bool = False) -> Tuple[List, List, List]:
         """
         This method take a dictionary of arguments and the arguments definitions to validate that
         any required argument is present and any existing argument is expected.
 
         Args:
-            to_validate (dict): Dictionary of arguments to be validated
-            args_definition (dict): The arguments' definition to be used during validation
+            to_validate (Dict): Dictionary of arguments to be validated
+            args_definition (Dict): The arguments' definition to be used during validation
 
         Returns:
-            tuple[list, list]: return a tuple [missing, unexpected] containing the missing required arguments and those that were not expected.
+            Tuple[List, List]: return a tuple [missing, unexpected] containing the missing required arguments and those that were not expected.
         """
         # Assert any required argument is present
-        is_list = isinstance(args_definition, list)
+        is_list = isinstance(args_definition, List)
         missing = []
 
         # Verify any required argument that is missing
@@ -319,14 +319,14 @@ class Endpoint:
 
         return missing, invalid
 
-    def validate_response(self, response: Response) -> dict:
+    def validate_response(self, response: Response) -> Dict:
         """
         This method validate the received response ensuring that the status code is successful,
         the response is a valid json and any expected field is included in the response.
         The response json is returned if response is valid.
 
         Args:
-            response (dict): received response
+            response (Dict): received response
 
         Raises:
             FncApiClientError: Error Type ENDPOINT_RESPONSE_VALIDATION_ERROR if:
@@ -335,7 +335,7 @@ class Endpoint:
                 - Any required field is missing from the response.
 
         Returns:
-            dict: Returns the response json as dictionary
+            Dict: Returns the response json as dictionary
         """
         if self._logger:
             self._logger.debug(f"Validating response after calling endpoint {self.get_endpoint_key().name}")
@@ -399,9 +399,9 @@ class Endpoint:
 class ArgumentDefinition:
     _required: bool
     _multiple: bool
-    _allowed: list
+    _allowed: List
 
-    def __init__(self, required: bool, multiple: bool, allowed: list = None):
+    def __init__(self, required: bool, multiple: bool, allowed: List = None):
         self._required = required
         self._multiple = multiple
         self._allowed = allowed
@@ -416,7 +416,7 @@ class ArgumentDefinition:
         return self._multiple
 
     def is_allowed(self, values) -> bool:
-        if not isinstance(values, list):
+        if not isinstance(values, List):
             values = [values]
 
         return not self._allowed or all(v in self._allowed for v in values)
@@ -436,17 +436,17 @@ class GetSensors(Endpoint):
     version: str = 'v1'
     endpoint: str = 'sensors'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_SENSORS
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         return {
             'account_uuid':   ArgumentDefinition(required=False, multiple=False),
             'account_code': ArgumentDefinition(required=False, multiple=False),
@@ -455,7 +455,7 @@ class GetSensors(Endpoint):
             'enabled':      ArgumentDefinition(required=False, multiple=False),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['sensors']
 
 
@@ -475,7 +475,7 @@ class GetDevices(Endpoint):
         sort_direction (str): 'asc' or 'desc',
 
     Returns:
-        dict: A dictionary containing three fields (
+        Dict: A dictionary containing three fields (
             'device_list': list of returned devices,
             'result_count': total count of devices and
             'return_count': Amount of returned devices
@@ -485,17 +485,17 @@ class GetDevices(Endpoint):
     version: str = 'v1'
     endpoint: str = 'devices'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_DEVICES
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         return {
             'account_uuid':        ArgumentDefinition(required=False, multiple=False),
             'start_date':        ArgumentDefinition(required=False, multiple=False),
@@ -508,7 +508,7 @@ class GetDevices(Endpoint):
             'sort_direction':    ArgumentDefinition(required=False, multiple=False, allowed=['desc', 'asc']),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['devices']
 
 
@@ -516,20 +516,20 @@ class GetTask(Endpoint):
     version: str = 'v1'
     endpoint: str = 'pcaptasks/{task_id}'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_TASK
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_url_args(self) -> dict:
+    def get_url_args(self) -> Dict:
         return ['task_id']
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['pcap_task']
 
 
@@ -537,17 +537,17 @@ class GetTasks(Endpoint):
     version: str = 'v1'
     endpoint: str = 'pcaptasks'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_TASKS
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         return {
             'created_start':   ArgumentDefinition(required=False, multiple=False),
             'created_end': ArgumentDefinition(required=False, multiple=False),
@@ -558,7 +558,7 @@ class GetTasks(Endpoint):
             'page_num':      ArgumentDefinition(required=False, multiple=False),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['pcaptasks']
 
 
@@ -566,17 +566,17 @@ class CreateTask(Endpoint):
     version: str = 'v1'
     endpoint: str = 'pcaptasks'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.CREATE_TASK
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'POST'
         }
 
-    def get_body_args(self) -> dict:
+    def get_body_args(self) -> Dict:
         return {
             'description':          ArgumentDefinition(required=True, multiple=False),
             'name':                 ArgumentDefinition(required=True, multiple=False),
@@ -587,7 +587,7 @@ class CreateTask(Endpoint):
             'requested_end_date':   ArgumentDefinition(required=True, multiple=False),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['pcaptask']
 
 
@@ -595,17 +595,17 @@ class GetTelemetryEvents(Endpoint):
     version: str = 'v1'
     endpoint: str = 'telemetry/events'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_TELEMETRY_EVENTS
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         return {
             'interval':   ArgumentDefinition(required=False, multiple=False),
             'start_date': ArgumentDefinition(required=False, multiple=False),
@@ -617,7 +617,7 @@ class GetTelemetryEvents(Endpoint):
             'group_by':      ArgumentDefinition(required=False, multiple=False, allowed=['event_type', 'sensor_id', 'account_code']),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['columns', 'data']
 
 
@@ -625,17 +625,17 @@ class GetTelemetryPacketstats(Endpoint):
     version: str = 'v1'
     endpoint: str = 'telemetry/packetstats'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_TELEMETRY_PACKETSTATS
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         return {
             'sensor_id':   ArgumentDefinition(required=False, multiple=False),
             'account_code':   ArgumentDefinition(required=False, multiple=False),
@@ -645,7 +645,7 @@ class GetTelemetryPacketstats(Endpoint):
             'group_by':      ArgumentDefinition(required=False, multiple=False, allowed=['interface_name', 'sensor_id', 'account_code']),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['data']
 
 
@@ -653,17 +653,17 @@ class GetTelemetryNetwork(Endpoint):
     version: str = 'v1'
     endpoint: str = 'telemetry/network_usage'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_TELEMETRY_NETWORK
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         return {
             'account_code':      ArgumentDefinition(required=False, multiple=False),
             'interval':          ArgumentDefinition(required=False, multiple=False, allowed=['day', 'month_to-day']),
@@ -675,7 +675,7 @@ class GetTelemetryNetwork(Endpoint):
             'end_date':          ArgumentDefinition(required=False, multiple=False),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['network_usage']
 
 # Entity API's Endpoints
@@ -685,26 +685,26 @@ class GetEntitySummary(Endpoint):
     version: str = 'v1'
     endpoint: str = 'entity/{entity}/summary'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_ENTITY_SUMMARY
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_url_args(self) -> list:
+    def get_url_args(self) -> List:
         return ['entity']
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         return {
             'account_uuid':       ArgumentDefinition(required=False, multiple=True),
             'entity_type':      ArgumentDefinition(required=False, multiple=False, allowed=['domain', 'ip']),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['summary']
 
 
@@ -712,23 +712,23 @@ class GetEntityVirusTotal(Endpoint):
     version: str = 'v1'
     endpoint: str = 'entity/{entity}/vt'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_ENTITY_VIRUS_TOTAL
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_url_args(self) -> list:
+    def get_url_args(self) -> List:
         return ['entity']
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         return {}
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['vt_response']
 
 
@@ -736,20 +736,20 @@ class GetEntityPdns(Endpoint):
     version: str = 'v1'
     endpoint: str = 'entity/{entity}/pdns'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_ENTITY_PDNS
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_url_args(self) -> list:
+    def get_url_args(self) -> List:
         return ['entity']
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         return {
             'account_uuid':       ArgumentDefinition(required=False, multiple=True),
             'record_type':      ArgumentDefinition(required=False, multiple=True),
@@ -760,7 +760,7 @@ class GetEntityPdns(Endpoint):
             'limit':            ArgumentDefinition(required=False, multiple=False),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['passivedns']
 
 
@@ -768,20 +768,20 @@ class GetEntityDhcp(Endpoint):
     version: str = 'v1'
     endpoint: str = 'entity/{entity}/dhcp'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_ENTITY_DHCP
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_url_args(self) -> list:
+    def get_url_args(self) -> List:
         return ['entity']
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         return {
             'account_uuid':       ArgumentDefinition(required=False, multiple=True),
             'sensor_id':      ArgumentDefinition(required=False, multiple=False),
@@ -789,7 +789,7 @@ class GetEntityDhcp(Endpoint):
             'end_date':         ArgumentDefinition(required=False, multiple=False),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['dhcp']
 
 
@@ -797,25 +797,25 @@ class GetEntityFile(Endpoint):
     version: str = 'v1'
     endpoint: str = 'entity/{entity}/file'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_ENTITY_FILE
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_url_args(self) -> list:
+    def get_url_args(self) -> List:
         return ['entity']
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         return {
             'account_uuid':       ArgumentDefinition(required=False, multiple=True),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['file']
 
 # Detection API's Endpoints
@@ -825,17 +825,17 @@ class GetDetections(Endpoint):
     version: str = 'v1'
     endpoint: str = 'detections'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_DETECTIONS
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         return {
             'account_uuid':                   ArgumentDefinition(required=False, multiple=False),
             'rule_uuid':                    ArgumentDefinition(required=False, multiple=True),
@@ -873,7 +873,7 @@ class GetDetections(Endpoint):
             'rule_account_uuid':            ArgumentDefinition(required=False, multiple=False),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['detections', 'rules']
 
 
@@ -881,20 +881,20 @@ class ResolveDetection(Endpoint):
     version: str = 'v1'
     endpoint: str = 'detections/{detection_id}/resolve'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.RESOLVE_DETECTION
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'PUT'
         }
 
-    def get_url_args(self) -> dict:
+    def get_url_args(self) -> Dict:
         return ['detection_id']
 
-    def get_body_args(self) -> dict:
+    def get_body_args(self) -> Dict:
         return {
             'resolution':         ArgumentDefinition(
                 required=True,
@@ -904,7 +904,7 @@ class ResolveDetection(Endpoint):
             'resolution_comment': ArgumentDefinition(required=False, multiple=False),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return None
 
 
@@ -912,24 +912,24 @@ class GetDetectionEvents(Endpoint):
     version: str = 'v1'
     endpoint: str = 'events'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_DETECTION_EVENTS
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         return {
             'detection_uuid': ArgumentDefinition(required=True, multiple=False),
             'offset':         ArgumentDefinition(required=False, multiple=False),
             'limit':          ArgumentDefinition(required=False, multiple=False),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['events']
 
 
@@ -937,17 +937,17 @@ class GetRules(Endpoint):
     version: str = 'v1'
     endpoint: str = 'rules'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_RULES
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         return {
             'account_uuid':          ArgumentDefinition(required=False, multiple=False),
             'rule_account_uuid':   ArgumentDefinition(required=False, multiple=False),
@@ -972,7 +972,7 @@ class GetRules(Endpoint):
             'limit':               ArgumentDefinition(required=False, multiple=False),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['accounts', 'rules']
 
 
@@ -980,20 +980,20 @@ class GetRule(Endpoint):
     version: str = 'v1'
     endpoint: str = 'rules/{rule_id}'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_RULE
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_url_args(self) -> dict:
+    def get_url_args(self) -> Dict:
         return ['rule_id']
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['rule']
 
 
@@ -1001,17 +1001,17 @@ class CreateRule(Endpoint):
     version: str = 'v1'
     endpoint: str = 'rules'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.CREATE_RULE
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'POST'
         }
 
-    def get_body_args(self) -> dict:
+    def get_body_args(self) -> Dict:
         return {
             'account_uuid':            ArgumentDefinition(required=True, multiple=False),
             'name':                    ArgumentDefinition(required=True, multiple=False),
@@ -1029,7 +1029,7 @@ class CreateRule(Endpoint):
             'auto_resolution_minutes': ArgumentDefinition(required=False, multiple=False),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['rule']
 
 
@@ -1037,27 +1037,27 @@ class GetRuleEvents(Endpoint):
     version: str = 'v1'
     endpoint: str = 'rules/{rule_id}/events'
 
-    default_values: dict = {}
+    default_values: Dict = {}
 
     def get_endpoint_key(self) -> EndpointKey:
         return EndpointKey.GET_RULE_EVENTS
 
-    def get_control_args(self) -> dict:
+    def get_control_args(self) -> Dict:
         return {
             'method': 'GET'
         }
 
-    def get_url_args(self) -> dict:
+    def get_url_args(self) -> Dict:
         return ['rule_id']
 
-    def get_query_args(self) -> dict:
+    def get_query_args(self) -> Dict:
         return {
             'account_uuid': ArgumentDefinition(required=False, multiple=False),
             'offset':       ArgumentDefinition(required=False, multiple=False),
             'limit':        ArgumentDefinition(required=False, multiple=False),
         }
 
-    def get_response_fields(self) -> list[str]:
+    def get_response_fields(self) -> List[str]:
         return ['events']
 
 
@@ -1068,7 +1068,7 @@ class FncApi:
     def get_name(self) -> str:
         return self._api_name
 
-    def get_supported_endpoints(self) -> dict:
+    def get_supported_endpoints(self) -> Dict:
         raise NotImplementedError()
 
     def get_endpoint_if_supported(self, endpoint: Union[str, EndpointKey]) -> Endpoint:
@@ -1086,7 +1086,7 @@ class FncApi:
 class SensorApi(FncApi):
     _api_name = "sensor"
 
-    def get_supported_endpoints(self) -> dict:
+    def get_supported_endpoints(self) -> Dict:
         return {
             EndpointKey.GET_SENSORS: GetSensors(),
             EndpointKey.GET_DEVICES: GetDevices(),
@@ -1102,7 +1102,7 @@ class SensorApi(FncApi):
 class DetectionApi(FncApi):
     _api_name = "detections"
 
-    def get_supported_endpoints(self) -> dict:
+    def get_supported_endpoints(self) -> Dict:
         return {
             EndpointKey.GET_DETECTIONS: GetDetections(),
             EndpointKey.GET_DETECTION_EVENTS: GetDetectionEvents(),
@@ -1117,7 +1117,7 @@ class DetectionApi(FncApi):
 class EntityApi(FncApi):
     _api_name = "entity"
 
-    def get_supported_endpoints(self) -> dict:
+    def get_supported_endpoints(self) -> Dict:
         return {
             EndpointKey.GET_ENTITY_SUMMARY: GetEntitySummary(),
             EndpointKey.GET_ENTITY_PDNS: GetEntityPdns(),

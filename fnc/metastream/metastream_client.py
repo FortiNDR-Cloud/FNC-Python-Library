@@ -1,7 +1,7 @@
 import json
 import os.path
 from datetime import datetime, timedelta, timezone
-from typing import Iterator, List
+from typing import Dict, Iterator, List, Tuple
 
 from fnc.global_variables import (
     CLIENT_DEFAULT_USER_AGENT,
@@ -206,7 +206,7 @@ class FncMetastreamClient:
                     self.get_logger().debug(f"{len(events)} events reported from {obj.get('Key')}")
                     yield events
 
-    def fetch_events_by_day(self, day: datetime, event_type: str, limit: int = 0, context: MetastreamContext = None) -> Iterator[List[dict]]:
+    def fetch_events_by_day(self, day: datetime, event_type: str, limit: int = 0, context: MetastreamContext = None) -> Iterator[List[Dict]]:
         """fetches events from metastream for an entire day.  See README.md for full details"""
         self.get_logger().info(f"Fetching {event_type} events for {day.date()}.")
 
@@ -237,7 +237,7 @@ class FncMetastreamClient:
                          timezone.utc) - timedelta(minutes=5),
                      end_date: datetime = None,
                      limit: int = 0,
-                     context: MetastreamContext = None) -> Iterator[List[dict]]:
+                     context: MetastreamContext = None) -> Iterator[List[Dict]]:
         """fetches events from metastream.  See README.md for full details"""
         # Ensure Dates are in UTC
         end_date_str = datetime_to_utc_str(datetime_obj=end_date, format=DEFAULT_DATE_FORMAT)
@@ -286,7 +286,7 @@ class FncMetastreamClient:
     def fetch_event_types(self):
         return METASTREAM_SUPPORTED_EVENT_TYPES
 
-    def get_splitted_context(self, start_date_str: str = None) -> tuple[MetastreamContext, MetastreamContext]:
+    def get_splitted_context(self, start_date_str: str = None) -> Tuple[MetastreamContext, MetastreamContext]:
         checkpoint = datetime.now(tz=timezone.utc).replace(microsecond=0)
 
         h_context = MetastreamContext()
@@ -318,7 +318,7 @@ class FncMetastreamClient:
         self, context: MetastreamContext = None,
         event_type: str = None,
         interval: timedelta = timedelta(days=1)
-    ) -> Iterator[List[dict]]:
+    ) -> Iterator[List[Dict]]:
         # Raise Exception if No Context with History is passed
         if not context or not context.get_history(event_type):
             self.get_logger().error("A splitted context with the history time window is required to pull history")

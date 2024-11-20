@@ -3,6 +3,7 @@ import copy
 import logging
 import random
 from datetime import datetime, timedelta, timezone
+from typing import Dict, List
 
 import pytest
 from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
@@ -80,14 +81,14 @@ def test_get_url_failure_missing_url_args(mocker):
     for _, endpoint in endpoints.items():
         # Assert KeyError is raised if any url argument is missing
 
-        url_args: dict = {
+        url_args: Dict = {
             'url_arg_1': url_arg_1,
         }
         with pytest.raises(FncClientError) as e:
             client.get_url(e=endpoint, api=api, url_args=url_args)
 
         ex: FncClientError = e.value
-        data: dict = ex.error_data
+        data: Dict = ex.error_data
         assert isinstance(data['error'], KeyError)
 
 
@@ -106,7 +107,7 @@ def test_get_url_failure_missing_api_name(mocker):
 
     for _, endpoint in endpoints.items():
         # Assert KeyError is raised if the api has no name
-        url_args: dict = {
+        url_args: Dict = {
             'url_arg_1': url_arg_1,
             'url_arg_2': url_arg_2,
         }
@@ -116,7 +117,7 @@ def test_get_url_failure_missing_api_name(mocker):
             client.get_url(e=endpoint, api=api, url_args=url_args)
 
         ex: FncClientError = e.value
-        data: dict = ex.error_data
+        data: Dict = ex.error_data
         assert ex.error_type == ErrorType.ENDPOINT_VALIDATION_ERROR
         assert isinstance(data['error'], KeyError)
 
@@ -138,7 +139,7 @@ def test_get_url_succeed(mocker):
 
     for _, endpoint in endpoints.items():
         endpoint_url = endpoint.get_url()
-        url_args: dict = {
+        url_args: Dict = {
             'url_arg_1': url_arg_1,
             'url_arg_2': url_arg_2,
         }
@@ -183,8 +184,8 @@ def test_get_endpoint_if_supported_failure_no_support(mocker):
     endpoints = list(EndpointKey._member_map_.keys())
     count = len(endpoints)
 
-    unsupported: list = endpoints[slice(0, 1)]
-    supported: list = endpoints[slice(1, count)]
+    unsupported: List = endpoints[slice(0, 1)]
+    supported: List = endpoints[slice(1, count)]
 
     api: MockApi = MockApi(endpoints_keys=supported)
 
@@ -214,7 +215,7 @@ def test_get_endpoint_if_supported_failure_multiple_support(mocker):
     domain = 'fake_domain'
     agent = 'fake_agent'
 
-    supported: list = get_random_endpoint_keys(size=1)
+    supported: List = get_random_endpoint_keys(size=1)
     api1: MockApi = MockApi(endpoints_keys=supported)
     api2: MockApi = MockApi(endpoints_keys=supported)
 
@@ -244,7 +245,7 @@ def test_get_endpoint_if_supported_succeed(mocker):
     domain = 'fake_domain'
     agent = 'fake_agent'
 
-    supported: list = get_random_endpoint_keys(size=2)
+    supported: List = get_random_endpoint_keys(size=2)
     api1: MockApi = MockApi(endpoints_keys=supported[slice(0, 1)])
     api2: MockApi = MockApi(endpoints_keys=supported[slice(1, 2)])
 
@@ -413,7 +414,7 @@ def test_call_endpoint_succeed(mocker):
     spy_send_request = mocker.spy(rest_client, 'send_request')
     spy_validate_request = mocker.spy(rest_client, 'validate_request')
 
-    supported: list = get_random_endpoint_keys(size=1)
+    supported: List = get_random_endpoint_keys(size=1)
     api1: MockApi = MockApi(endpoints_keys=supported)
 
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
@@ -428,7 +429,7 @@ def test_call_endpoint_succeed(mocker):
     spy_endpoint_validate_response = mocker.spy(endpoint, 'validate_response')
 
     rand_string = get_random_string(),
-    args: dict = {
+    args: Dict = {
         'url_arg_1': 'url_arg_1_value',
         'url_arg_2': 'url_arg_2_value',
 
@@ -514,7 +515,7 @@ def test_call_endpoint_failure_invalid_endpoint(mocker):
     agent = 'fake_agent'
 
     rest_client = MockRestClient()
-    supported: list = get_random_endpoint_keys(size=1)
+    supported: List = get_random_endpoint_keys(size=1)
     api1: MockApi = MockApi(endpoints_keys=supported)
 
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
@@ -534,7 +535,7 @@ def test_call_endpoint_failure_invalid_endpoint(mocker):
         'fnc.api.endpoints.Endpoint.validate', side_effect=endpoint_validation_error)
 
     rand_string = get_random_string(),
-    args: dict = {
+    args: Dict = {
         'url_arg_1': 'url_arg_1_value',
         'url_arg_2': 'url_arg_2_value',
 
@@ -578,7 +579,7 @@ def test_call_endpoint_failure_invalid_request(mocker):
     mock_validate_request = mocker.patch.object(
         rest_client, 'validate_request', side_effect=request_validation_error)
 
-    supported: list = get_random_endpoint_keys(size=1)
+    supported: List = get_random_endpoint_keys(size=1)
     api1: MockApi = MockApi(endpoints_keys=supported)
 
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
@@ -592,7 +593,7 @@ def test_call_endpoint_failure_invalid_request(mocker):
     spy_endpoint_validate = mocker.spy(endpoint, 'validate')
 
     rand_string = get_random_string(),
-    args: dict = {
+    args: Dict = {
         'url_arg_1': 'url_arg_1_value',
         'url_arg_2': 'url_arg_2_value',
 
@@ -656,7 +657,7 @@ def test_call_endpoint_failure_failed_request(mocker):
         rest_client, 'send_request', side_effect=send_request_error)
     spy_validate_request = mocker.spy(rest_client, 'validate_request')
 
-    supported: list = get_random_endpoint_keys(size=1)
+    supported: List = get_random_endpoint_keys(size=1)
     api1: MockApi = MockApi(endpoints_keys=supported)
 
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
@@ -677,7 +678,7 @@ def test_call_endpoint_failure_failed_request(mocker):
     spy_endpoint_validate_response = mocker.spy(endpoint, 'validate_response')
 
     rand_string = get_random_string(),
-    args: dict = {
+    args: Dict = {
         'url_arg_1': 'url_arg_1_value',
         'url_arg_2': 'url_arg_2_value',
 
@@ -736,7 +737,7 @@ def test_call_endpoint_failure_invalid_response(mocker):
     spy_send_request = mocker.spy(rest_client, 'send_request')
     spy_validate_request = mocker.spy(rest_client, 'validate_request')
 
-    supported: list = get_random_endpoint_keys(size=1)
+    supported: List = get_random_endpoint_keys(size=1)
     api1: MockApi = MockApi(endpoints_keys=supported)
 
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
@@ -764,7 +765,7 @@ def test_call_endpoint_failure_invalid_response(mocker):
         endpoint, 'validate_response', side_effect=endpoint_response_validation_error)
 
     rand_string = get_random_string(),
-    args: dict = {
+    args: Dict = {
         'url_arg_1': 'url_arg_1_value',
         'url_arg_2': 'url_arg_2_value',
 
@@ -824,7 +825,7 @@ def test_call_endpoint_failure_retry_stop_when_false(mocker):
     spy_send_request = mocker.spy(rest_client, 'send_request')
     spy_validate_request = mocker.spy(rest_client, 'validate_request')
 
-    supported: list = get_random_endpoint_keys(size=1)
+    supported: List = get_random_endpoint_keys(size=1)
     api1: MockApi = MockApi(endpoints_keys=supported)
 
     mocker.patch('fnc.api.api_client.FncApiClient._validate_api_token')
@@ -851,7 +852,7 @@ def test_call_endpoint_failure_retry_stop_when_false(mocker):
         endpoint, 'validate_response', side_effect=endpoint_response_validation_error)
 
     rand_string = get_random_string(),
-    args: dict = {
+    args: Dict = {
         'url_arg_1': 'url_arg_1_value',
         'url_arg_2': 'url_arg_2_value',
 
@@ -2011,7 +2012,7 @@ def test_poll_history_succeed_no_enrichment(mocker):
 
     for c in mock_continuous_calling.call_args_list:
         assert c.kwargs
-        args: dict = c.kwargs.get('args', None)
+        args: Dict = c.kwargs.get('args', None)
         ctx: ApiContext = c.kwargs.get('context', None)
         assert args and ctx
 
@@ -2059,7 +2060,7 @@ def test_poll_history_succeed_enrichment(mocker):
         empty_response = get_empty_detections_response()
         responses.append(empty_response)
         detections_responses.append(empty_response)
-        # iter: Iterator[List[dict]] = Iterator(responses)
+        # iter: Iterator[List[Dict]] = Iterator(responses)
         generator_responses.append(iter(responses))
 
     polling_args['start_date'] = f'{days} days ago'
@@ -2078,7 +2079,7 @@ def test_poll_history_succeed_enrichment(mocker):
 
     for c in mock_continuous_calling.call_args_list:
         assert c.kwargs
-        args: dict = c.kwargs.get('args', None)
+        args: Dict = c.kwargs.get('args', None)
         ctx: ApiContext = c.kwargs.get('context', None)
         assert args and ctx
 

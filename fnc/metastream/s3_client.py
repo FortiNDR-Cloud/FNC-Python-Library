@@ -1,7 +1,7 @@
 import gzip
 import json
 import sys
-from typing import Iterator, List
+from typing import Dict, Iterator, List
 
 import boto3
 import botocore.client
@@ -20,10 +20,10 @@ class MetastreamContext:
         self.file_downloads = 0
         self.api_calls = 0
 
-    def _is_full_history(self, history: dict = None):
+    def _is_full_history(self, history: Dict = None):
         return any([i in history for i in METASTREAM_SUPPORTED_EVENT_TYPES])
 
-    def update_history(self, event_type: str = None, history: dict = None):
+    def update_history(self, event_type: str = None, history: Dict = None):
         if self._is_full_history(history=history):
             self._history = history
         elif not event_type:

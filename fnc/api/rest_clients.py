@@ -1,6 +1,7 @@
 import ssl
 import sys
 import traceback
+from typing import Dict
 from urllib.parse import urlparse
 
 import requests
@@ -27,7 +28,7 @@ class SSLAdapter(HTTPAdapter):
     context = create_urllib3_context()
 
     def __init__(self, verify=True, **kwargs):
-        # type: (bool, dict) -> None
+        # type: (bool, Dict) -> None
         if not verify and ssl.OPENSSL_VERSION_INFO >= (3, 0, 0, 0):
             self.context.options |= 0x4
         super().__init__(**kwargs)  # type: ignore[arg-type]
@@ -43,21 +44,21 @@ class SSLAdapter(HTTPAdapter):
 
 class FncRestClient:
     logger: FncClientLogger
-    default_args: dict
+    default_args: Dict
 
     def set_logger(self, logger: FncClientLogger):
         self.logger = logger
 
-    def validate_request(self, req_args: dict):
+    def validate_request(self, req_args: Dict):
         raise NotImplementedError()
 
-    def send_request(self, req_args: dict):
+    def send_request(self, req_args: Dict):
         raise NotImplementedError()
 
 
 class BasicRestClient(FncRestClient):
     http_session = None
-    default_args: dict
+    default_args: Dict
 
     def close_http_session(self):
         try:
@@ -93,7 +94,7 @@ class BasicRestClient(FncRestClient):
         self.http_session.mount(
             'https://', SSLAdapter())
 
-    def validate_request(self, req_args: dict):
+    def validate_request(self, req_args: Dict):
         if not req_args or 'url' not in req_args:
             raise FncClientError(
                 error_type=ErrorType.REQUEST_VALIDATION_ERROR,
@@ -106,7 +107,7 @@ class BasicRestClient(FncRestClient):
                 error_message=ErrorMessages.REQUEST_METHOD_NOT_PROVIDED
             )
 
-    def send_request(self, req_args: dict = None):
+    def send_request(self, req_args: Dict = None):
         try:
             parsed_uri = urlparse(req_args['url'])
             masked_url = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_uri)
