@@ -7,7 +7,6 @@ setup(
     url='fortinet.com',
     license='',
     author='Fortinet',
-    author_email='emesabarrameda@fortinet.com',
     description='Classes and functions to interact with the FortiNDR Cloud APIs and Metastream.',
     long_description=open('README.md').read()
     # install_requires=['boto3 == 1.10.23']
