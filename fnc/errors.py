@@ -106,3 +106,10 @@ class FncClientError(Exception):
 
     def get_original_exception(self):
         return self.exception
+
+    def is_request_error(self) -> bool:
+        return (self.error_type == ErrorType.REQUEST_CONNECTION_ERROR
+                or self.error_type == ErrorType.REQUEST_ERROR
+                or self.error_type == ErrorType.REQUEST_HTTP_ERROR
+                or self.error_type == ErrorType.REQUEST_TIMEOUT_ERROR
+                or self.error_type == ErrorType.REQUEST_VALIDATION_ERROR)
