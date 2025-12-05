@@ -3,21 +3,21 @@ version: v1.0.5
 
 ----
 # Build
-Instal the build package with:
+Install the build package with:
 ```shell
 pip install build
 ```
-from the rot project folder where the setup.py file is located run:
+from the root project folder where the setup.py file is located run:
 ```shell
 python3 -m build
 ```
-This command will build both, the pip installable package (currently used by splunk integration) and the wheel file (currently used by qradar integration)
+This command will build both, the pip installable package (currently used by splunk integration) and the wheel file (currently used by QRadar integration)
 # Install
 Install the package
 ```shell
 pip install dist/com_fortinet_fndrc_integrations_python_client-1.*.tar.gz
 ```
-To install to a specific directory use the `--target`argument.
+To install to a specific directory use the `--target` argument.
 ```shell
 pip install --target <directory> dist/com_fortinet_fndrc_integrations_python_client-1.*.tar.gz
 ```

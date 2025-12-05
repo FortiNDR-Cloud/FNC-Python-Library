@@ -992,15 +992,16 @@ class FncApiClient:
         if not fetch_dhcp and not fetch_pdns and not fetch_vt:
             return result
 
+        self.logger.debug(f'Retrieving information for entity {entity}.')
         if ctx:
             ctx.record_metric(MetricName.ENTITY_ENRICHMENT_REQUESTED)
             cached_record = ctx.get_entity_details_cache().get_record(entity=entity)
             if cached_record:
+                self.logger.debug(f"Entity {entity}'s information was found in cache.")
                 ctx.record_metric(MetricName.ENTITY_ENRICHMENT_FROM_CACHE)
                 return cached_record
 
         result.update({'entity': entity})
-        self.logger.debug(f'Retrieving information for entity {entity}.')
 
         # Get PDNS/VT/DHCP info if requested
         if fetch_pdns:
