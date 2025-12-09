@@ -1,4 +1,5 @@
 
+import json
 import traceback
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -6,10 +7,29 @@ from typing import Any, Dict, Iterator, List, Tuple, Union
 
 from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
 
-from fnc.api.endpoints import DetectionApi, Endpoint, EndpointKey, EntityApi, FncApi, SensorApi
-from fnc.global_variables import (CLIENT_DEFAULT_DOMAIN, CLIENT_DEFAULT_USER_AGENT, CLIENT_MAX_AGE_HOURS, CLIENT_NAME, CLIENT_PROTOCOL,
-                                  CLIENT_VERSION, DEFAULT_DATE_FORMAT, POLLING_DEFAULT_DELAY, POLLING_MAX_DETECTION_EVENTS,
-                                  POLLING_MAX_DETECTIONS, REQUEST_DEFAULT_TIMEOUT, REQUEST_DEFAULT_VERIFY, REQUEST_MAXIMUM_RETRY_ATTEMPT)
+from fnc.api.endpoints import (
+    DetectionApi,
+    Endpoint,
+    EndpointKey,
+    EntityApi,
+    FncApi,
+    SensorApi,
+)
+from fnc.global_variables import (
+    CLIENT_DEFAULT_DOMAIN,
+    CLIENT_DEFAULT_USER_AGENT,
+    CLIENT_MAX_AGE_HOURS,
+    CLIENT_NAME,
+    CLIENT_PROTOCOL,
+    CLIENT_VERSION,
+    DEFAULT_DATE_FORMAT,
+    POLLING_DEFAULT_DELAY,
+    POLLING_MAX_DETECTION_EVENTS,
+    POLLING_MAX_DETECTIONS,
+    REQUEST_DEFAULT_TIMEOUT,
+    REQUEST_DEFAULT_VERIFY,
+    REQUEST_MAXIMUM_RETRY_ATTEMPT,
+)
 from fnc.utils import datetime_to_utc_str, str_to_utc_datetime
 
 from ..errors import ErrorMessages, ErrorType, FncClientError
@@ -1083,8 +1103,9 @@ class FncApiClient:
         fetch_pdns: bool = self._get_as_bool(args.get('include_pdns'))
         fetch_dhcp: bool = self._get_as_bool(args.get('include_dhcp'))
         fetch_vt: bool = self._get_as_bool(args.get('include_vt'))
+        fetch_annotations: bool = self._get_as_bool(args.get('include_annotations'))
 
-        include_entities = fetch_pdns or fetch_dhcp or fetch_vt
+        include_entities = fetch_pdns or fetch_dhcp or fetch_vt or fetch_annotations
 
         detection_events = {}
         total_events = 0
@@ -1122,8 +1143,23 @@ class FncApiClient:
             self.logger.debug(
                 " Enriching detection with additional entity's information.")
 
+            annotations_args = {}
+            ent_det_map = {}
+
+            if fetch_annotations:
+                if args["account_uuid"]:
+                    annotations_args["account_uuid"] = args["account_uuid"]
+                annotations_args["entities"] = []
+
             for detection in response['detections']:
                 entity = detection['device_ip']
+                ent_det_map[entity] = [detection] if entity not in ent_det_map else ent_det_map[entity].extend(detection)
+
+                if fetch_annotations:
+                    ent = {}
+                    ent["entity"] = entity
+                    ent["entity_type"] = "ip"
+                    annotations_args["entities"].append(ent)
 
                 # Add the PDNS and DHCP information if requested
                 entity_info = self.get_entity_information(
@@ -1135,6 +1171,23 @@ class FncApiClient:
                     fetch_vt=fetch_vt
                 )
                 detection.update(entity_info)
+
+            if fetch_annotations:
+                self.logger.debug("Fetching entities' annotations.")
+                # The endpoints implementation expect arguments as string
+                annotations_args["entities"] = json.dumps(annotations_args["entities"])
+                annotations_data = self.call_endpoint(endpoint=EndpointKey.GET_ENTITY_ANNOTATIONS, args=annotations_args)
+                annotations: List = annotations_data.get('entity_annotations', [])
+
+                for annotation in annotations:
+                    if "entity" not in annotation or "entity" not in annotation["entity"]:
+                        continue
+                    annotated_entity = annotation["entity"]["entity"]
+                    for det in ent_det_map[annotated_entity]:
+                        det["annotations"] = annotation["annotations"]
+
+                self.logger.debug(
+                    "Entities' annotations successfully retrieved.")
 
             self.logger.info(
                 "Entity's information successfully added to the detections.")
