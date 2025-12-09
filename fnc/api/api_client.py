@@ -1183,7 +1183,8 @@ class FncApiClient:
                     if "entity" not in annotation or "entity" not in annotation["entity"]:
                         continue
                     annotated_entity = annotation["entity"]["entity"]
-                    for det in ent_det_map[annotated_entity]:
+                    to_be_updated = ent_det_map[annotated_entity] if annotated_entity in ent_det_map and ent_det_map[annotated_entity] else []
+                    for det in to_be_updated:
                         det["annotations"] = annotation["annotations"]
 
                 self.logger.debug(
