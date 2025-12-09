@@ -1,24 +1,25 @@
 # FNC Python Library
-version: v1.0.4
+version: v1.0.5
 
 ----
 # Build
-Create a pip installable package (currently used by splunk integration)
+Install the build package with:
 ```shell
-python3 setup.py sdist
+pip install build
 ```
-Create a wheel file (currently used by qradar integration)
+from the root project folder where the setup.py file is located run:
 ```shell
-python3 setup.py bdist_wheel
+python3 -m build
 ```
+This command will build both, the pip installable package (currently used by splunk integration) and the wheel file (currently used by QRadar integration)
 # Install
 Install the package
 ```shell
-pip install dist/com.fortinet.fndrc.integrations.python_client-1.*.tar.gz
+pip install dist/com_fortinet_fndrc_integrations_python_client-1.*.tar.gz
 ```
-To install to a specific directory use the `--target`argument.
+To install to a specific directory use the `--target` argument.
 ```shell
-pip install --target <directory> dist/com.fortinet.fndrc.integrations.python_client-1.*.tar.gz
+pip install --target <directory> dist/com_fortinet_fndrc_integrations_python_client-1.*.tar.gz
 ```
 # Functions
 ## fetch_events_by_day

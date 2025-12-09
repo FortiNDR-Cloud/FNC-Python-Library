@@ -1,32 +1,15 @@
 
 import traceback
 from datetime import datetime, timedelta, timezone
+from enum import Enum
 from typing import Any, Dict, Iterator, List, Tuple, Union
 
 from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
 
-from fnc.api.endpoints import (
-    DetectionApi,
-    Endpoint,
-    EndpointKey,
-    EntityApi,
-    FncApi,
-    SensorApi,
-)
-from fnc.global_variables import (
-    CLIENT_DEFAULT_DOMAIN,
-    CLIENT_DEFAULT_USER_AGENT,
-    CLIENT_NAME,
-    CLIENT_PROTOCOL,
-    CLIENT_VERSION,
-    DEFAULT_DATE_FORMAT,
-    POLLING_DEFAULT_DELAY,
-    POLLING_MAX_DETECTION_EVENTS,
-    POLLING_MAX_DETECTIONS,
-    REQUEST_DEFAULT_TIMEOUT,
-    REQUEST_DEFAULT_VERIFY,
-    REQUEST_MAXIMUM_RETRY_ATTEMPT,
-)
+from fnc.api.endpoints import DetectionApi, Endpoint, EndpointKey, EntityApi, FncApi, SensorApi
+from fnc.global_variables import (CLIENT_DEFAULT_DOMAIN, CLIENT_DEFAULT_USER_AGENT, CLIENT_MAX_AGE_HOURS, CLIENT_NAME, CLIENT_PROTOCOL,
+                                  CLIENT_VERSION, DEFAULT_DATE_FORMAT, POLLING_DEFAULT_DELAY, POLLING_MAX_DETECTION_EVENTS,
+                                  POLLING_MAX_DETECTIONS, REQUEST_DEFAULT_TIMEOUT, REQUEST_DEFAULT_VERIFY, REQUEST_MAXIMUM_RETRY_ATTEMPT)
 from fnc.utils import datetime_to_utc_str, str_to_utc_datetime
 
 from ..errors import ErrorMessages, ErrorType, FncClientError
@@ -34,13 +17,223 @@ from ..logger import BasicLogger, FncClientLogger
 from .rest_clients import BasicRestClient, FncRestClient
 
 
+class EntityDetailsCacheRecord:
+    entityDetails: dict
+    added_timestamp: datetime
+    entity: str
+
+    def __init__(self, entity: str, entityDetails: dict):
+        self.entity = entity
+        self.entityDetails = entityDetails
+        self.added_timestamp = datetime.now()
+
+    # --- Getter methods ---
+    def get_entity(self) -> str:
+        return self.entity
+
+    def get_entity_details(self) -> dict:
+        return self.entityDetails
+
+    def get_added_timestamp(self) -> datetime:
+        return self.added_timestamp
+
+
+class EntityDetailsCache:
+    cache: dict
+
+    def __init__(self):
+        self.cache: dict[str, EntityDetailsCacheRecord] = {}
+
+    def add_record(self, entity: str, entityDetails: dict):
+        record = EntityDetailsCacheRecord(
+            entity=entity,
+            entityDetails=entityDetails
+        )
+
+        self.cache[entity] = record
+
+    def is_record_valid(self, entity: str) -> bool:
+        if entity not in self.cache:
+            return False
+
+        record = self.cache[entity]
+        max_age_delta = timedelta(hours=CLIENT_MAX_AGE_HOURS)
+        expiration_time = datetime.now() - max_age_delta
+
+        if record.added_timestamp < expiration_time:
+            del self.cache[entity]
+            return False
+        else:
+            return True
+
+    def get_record(self, entity: str) -> Dict:
+        if self.is_record_valid(entity):
+            return self.cache[entity].get_entity_details()
+        else:
+            return None
+
+    def get_all(self) -> Dict:
+        res = {}
+        for entity in self.cache.keys():
+            # Check if the record is still valid (and delete if expired)
+            if self.is_record_valid(entity):
+                record = self.cache.get(entity)
+                res[entity] = record.get_entity_details()
+        return res
+
+    def clear_cache(self):
+        self.cache.clear()
+
+
+class MetricName(Enum):
+    CONTINUOUS_POLLING_EXECUTION = "Polling executions"
+
+    DETECTIONS_REQUESTED = "Get Detections requests"
+    DETECTIONS_LIMIT_VERIFIED = "GetDetections requests to verify limit"
+    DETECTIONS_FAILED_REQUEST = "GetDetections failed requests"
+    DETECTIONS_RETRIEVED = "Detections retrieved"
+
+    DETECTION_EVENTS_REQUESTED = "Get Detection's Associated Events requests"
+    DETECTION_EVENTS_FAILED_REQUEST = "Get Detection's Associated Events failed requests"
+    DETECTION_EVENTS_RETRIEVED = "Detection's Associated Events retrieved"
+
+    ENTITY_ENRICHMENT_REQUESTED = "Get Entity Information Requests"
+    FAILED_PDNS_REQUEST = "Entity's Pdns failed requests"
+    FAILED_DHCP_REQUEST = "Entity's Dhcp failed requests"
+    FAILED_VT_REQUEST = "Entity's Virus Total failed requests"
+    ENTITY_ENRICHMENT_FROM_CACHE = "Entity Information Retrieved from Cache"
+
+
+class Metrics:
+    def __init__(self, counters: Dict[str, int] = {}):
+        self.counters: Dict[str, int] = counters or {}
+
+    def increment(self, metric_name: MetricName, amount: int = 1):
+        """Increments a specific counter."""
+        key = metric_name
+        if key not in self.counters:
+            self.counters[key] = 0
+
+        self.counters[key] += amount
+
+    def get_value(self, metric_name: MetricName) -> int:
+        """Returns the current count for a specific metric."""
+        return self.counters.get(metric_name.value, 0)
+
+    def reset_all(self):
+        """Resets all stored counters to zero."""
+        self.counters = {key: 0 for key in self.counters}
+
+    def merge(self, source_metrics: 'Metrics'):
+        for key, value in source_metrics.counters.items():
+            self.counters[key] = self.counters.get(key, 0) + value
+
+    def get_all(self):
+        """Returns a copy of all counters."""
+        return self.counters.copy()
+
+    def get_metric_report(self, title: str = "Metrics Report") -> str:
+        """
+        Generates a string report of all counters based on the logic provided.
+        """
+        report_lines = [f"\n--- {title} ---"]
+        report_lines.extend(self.get_detections_report())
+
+        detections_retrieved_count = self.counters.get(MetricName.DETECTIONS_RETRIEVED, 0)
+        if detections_retrieved_count > 0:
+            report_lines.extend(self.get_detections_events_report())
+            report_lines.extend(self.get_entities_report())
+
+        return "\n".join(report_lines)
+
+    def get_detections_report(self) -> list[str]:
+        report_lines = [f"      - Detection's Report ---"]
+
+        detection_request_count = self.counters.get(MetricName.DETECTIONS_REQUESTED, 0)
+        limit_verified_count = self.counters.get(MetricName.DETECTIONS_LIMIT_VERIFIED, 0)
+        failed_requests_count = self.counters.get(MetricName.DETECTIONS_FAILED_REQUEST, 0)
+        detections_retrieved_count = self.counters.get(MetricName.DETECTIONS_RETRIEVED, 0)
+
+        if detections_retrieved_count > 0:
+            report_lines.append(f"          {detections_retrieved_count} detections were retrieved in {detection_request_count} requests.")
+        else:
+            report_lines.append(f"          No detections were retrieved in {detection_request_count} requests.")
+
+        if limit_verified_count > 0:
+            report_lines.append(f"          {limit_verified_count} of the requests were to verified the limit.")
+
+        if failed_requests_count > 0:
+            report_lines.append(f"          {failed_requests_count} detections requests failed.")
+
+        return report_lines
+
+    def get_detections_events_report(self) -> list[str]:
+        report_lines = [f"      - Detection's Associated Events Report ---"]
+
+        detection_events_requests_count = self.counters.get(MetricName.DETECTION_EVENTS_REQUESTED, 0)
+        failed_requests_count = self.counters.get(MetricName.DETECTION_EVENTS_FAILED_REQUEST, 0)
+        detection_events_retrieved_count = self.counters.get(MetricName.DETECTION_EVENTS_RETRIEVED, 0)
+
+        if detection_events_retrieved_count > 0:
+            report_lines.append(
+                f"          {detection_events_retrieved_count} detection's associated events were retrieved in {detection_events_requests_count} requests.")
+        else:
+            report_lines.append(f"          No detection's associated events were retrieved in {detection_events_requests_count} requests.")
+
+        if failed_requests_count > 0:
+            report_lines.append(f"          {failed_requests_count} detection's associated events requests failed.")
+
+        return report_lines
+
+    def get_entities_report(self) -> list[str]:
+        report_lines = [f"      - Entities Information Report ---"]
+
+        entity_enrichment_request_count = self.counters.get(MetricName.ENTITY_ENRICHMENT_REQUESTED, 0)
+        entity_enrichment__from_cache_count = self.counters.get(MetricName.ENTITY_ENRICHMENT_FROM_CACHE, 0)
+        failed_pdns_requests_count = self.counters.get(MetricName.FAILED_PDNS_REQUEST, 0)
+        failed_dhcp_requests_count = self.counters.get(MetricName.FAILED_DHCP_REQUEST, 0)
+        failed_vt_requests_count = self.counters.get(MetricName.FAILED_VT_REQUEST, 0)
+
+        if entity_enrichment_request_count > 0:
+            report_lines.append(
+                f"          {entity_enrichment_request_count} entities were enriched.")
+
+            report_lines.append(
+                f"          {entity_enrichment_request_count - entity_enrichment__from_cache_count} were requested and {entity_enrichment__from_cache_count} were retrieved from cache.")
+        else:
+            report_lines.append("          No entity was enriched.")
+
+        if failed_pdns_requests_count > 0:
+            report_lines.append(f"          {failed_pdns_requests_count} Pdns requests failed.")
+
+        if failed_dhcp_requests_count > 0:
+            report_lines.append(f"          {failed_dhcp_requests_count} Dhcp requests failed.")
+
+        if failed_vt_requests_count > 0:
+            report_lines.append(f"          {failed_vt_requests_count} Vt requests failed.")
+
+        return report_lines
+
+
 class ApiContext:
     _polling_args: Dict
+    _entity_details_cache: EntityDetailsCache
+    _global_metric: Metrics
+    _sub_metric: Metrics
 
     def __init__(self):
         self._checkpoint = ''
         self._history = {}
         self._polling_args = {}
+        self._entity_details_cache = EntityDetailsCache()
+        self.global_metrics = Metrics()
+        self.sub_metrics = Metrics()
+
+    def get_entity_details_cache(self) -> EntityDetailsCache:
+        return self._entity_details_cache
+
+    def set_entity_details_cache(self, cache: EntityDetailsCache) -> EntityDetailsCache:
+        self._entity_details_cache = cache or self._entity_details_cache
 
     def update_history(self, history: Dict):
         self._history = history or None
@@ -70,6 +263,35 @@ class ApiContext:
     def clear_args(self):
         self._polling_args = {}
 
+    # --- Metric Collection Methods ---
+    def record_metric(self, metric_name: MetricName, amount: int = 1):
+        """
+        Records the metric to BOTH the sub-metric and the global metric.
+        """
+        # Global Metric update
+        self.global_metrics.increment(metric_name, amount)
+
+        # Sub-Metric update
+        self.sub_metrics.increment(metric_name, amount)
+
+    def get_sub_metrics(self) -> Metrics:
+        """
+        Returns the current accumulated sub-metrics.
+        """
+        return Metrics(self.sub_metrics.get_all())
+
+    def reset_sub_metrics(self):
+        """
+        Resets all sub-metrics to zero.
+        """
+        self.sub_metrics.reset_all()
+
+    def get_global_metrics(self) -> Metrics:
+        """
+        Returns the overall cumulative global metrics.
+        """
+        return Metrics(self.global_metrics.get_all())
+
 
 class FncApiClient:
 
@@ -82,6 +304,7 @@ class FncApiClient:
     rest_client: FncRestClient
     logger: FncClientLogger
     default_control_args: Dict
+    entityDetailsCache: EntityDetailsCache
 
     def __init__(
         self,
@@ -754,24 +977,38 @@ class FncApiClient:
 
     def get_entity_information(
         self,
+        ctx: ApiContext,
         entity: str,
+        account_uuid: str = None,
         fetch_pdns: bool = False,
         fetch_dhcp: bool = False,
         fetch_vt: bool = False,
     ) -> Dict:
         result: Dict = {}
+        args: Dict = {'entity': entity}
+        if account_uuid:
+            args['account_uuid'] = account_uuid
+
         if not fetch_dhcp and not fetch_pdns and not fetch_vt:
             return result
 
-        result.update({'entity': entity})
         self.logger.debug(f'Retrieving information for entity {entity}.')
+        if ctx:
+            ctx.record_metric(MetricName.ENTITY_ENRICHMENT_REQUESTED)
+            cached_record = ctx.get_entity_details_cache().get_record(entity=entity)
+            if cached_record:
+                self.logger.debug(f"Entity {entity}'s information was found in cache.")
+                ctx.record_metric(MetricName.ENTITY_ENRICHMENT_FROM_CACHE)
+                return cached_record
+
+        result.update({'entity': entity})
 
         # Get PDNS/VT/DHCP info if requested
         if fetch_pdns:
             self.logger.debug("Fetching entity's PDNS information.")
             try:
                 pdns_data = self.call_endpoint(
-                    endpoint=EndpointKey.GET_ENTITY_PDNS, args={'entity': entity})
+                    endpoint=EndpointKey.GET_ENTITY_PDNS, args=args)
                 pdns: List = pdns_data.get('passivedns', [])
 
                 result.update({"pdns": pdns})
@@ -780,6 +1017,7 @@ class FncApiClient:
                     "Entity's pdns information successfully retrieved.")
 
             except FncClientError:
+                ctx.record_metric(MetricName.FAILED_PDNS_REQUEST)
                 # If the request fails for a particular entity, we log it but continue with the execution.
                 self.logger.error(f"PDNS information for entity {entity} cannot be added due to:")
                 self.logger.error(traceback.format_exc())
@@ -788,7 +1026,7 @@ class FncApiClient:
             self.logger.debug("Fetching entity's DHCP information.")
             try:
                 dhcp_data = self.call_endpoint(
-                    endpoint=EndpointKey.GET_ENTITY_DHCP, args={'entity': entity})
+                    endpoint=EndpointKey.GET_ENTITY_DHCP, args=args)
                 dhcp: List = dhcp_data.get('dhcp', [])
 
                 result.update({"dhcp": dhcp})
@@ -796,6 +1034,7 @@ class FncApiClient:
                 self.logger.debug(
                     "Entity's DHCP information successfully retrieved.")
             except FncClientError:
+                ctx.record_metric(MetricName.FAILED_DHCP_REQUEST)
                 # If the request fails for a particular entity, we log it but continue with the execution.
                 self.logger.error(f"DHCP information for entity {entity} cannot be added due to:")
                 self.logger.error(traceback.format_exc())
@@ -812,10 +1051,12 @@ class FncApiClient:
                 self.logger.debug(
                     "Entity's Virus Total information successfully retrieved.")
             except FncClientError:
+                ctx.record_metric(MetricName.FAILED_VT_REQUEST)
                 # If the request fails for a particular entity, we log it but continue with the execution.
                 self.logger.error(f"Virus Total information for entity {entity} cannot be added due to:")
                 self.logger.error(traceback.format_exc())
 
+        ctx.get_entity_details_cache().add_record(entity=entity, entityDetails=result)
         return result
 
     def _get_as_bool(self, value):
@@ -827,12 +1068,23 @@ class FncApiClient:
 
         return False
 
-    def _process_response(self, response: Dict, args: Dict = None):
+    def _process_response(
+        self,
+        ctx: ApiContext,
+        response: Dict,
+        args: Dict = None
+    ):
         # Getting instructions from the arguments
         args = args or {}
         include_description = self._get_as_bool(args.get('include_description'))
         include_signature = self._get_as_bool(args.get('include_signature'))
         include_events = self._get_as_bool(args.get('include_events'))
+
+        fetch_pdns: bool = self._get_as_bool(args.get('include_pdns'))
+        fetch_dhcp: bool = self._get_as_bool(args.get('include_dhcp'))
+        fetch_vt: bool = self._get_as_bool(args.get('include_vt'))
+
+        include_entities = fetch_pdns or fetch_dhcp or fetch_vt
 
         detection_events = {}
         total_events = 0
@@ -861,8 +1113,31 @@ class FncApiClient:
                 include_description=include_description,
                 include_signature=include_signature
             )
+
         self.logger.info(
             "Rules' information successfully added to the detections.")
+
+        # Enrich detection with additional entity's information
+        if include_entities:
+            self.logger.debug(
+                " Enriching detection with additional entity's information.")
+
+            for detection in response['detections']:
+                entity = detection['device_ip']
+
+                # Add the PDNS and DHCP information if requested
+                entity_info = self.get_entity_information(
+                    ctx=ctx,
+                    entity=entity,
+                    account_uuid=args['account_uuid'],
+                    fetch_dhcp=fetch_dhcp,
+                    fetch_pdns=fetch_pdns,
+                    fetch_vt=fetch_vt
+                )
+                detection.update(entity_info)
+
+            self.logger.info(
+                "Entity's information successfully added to the detections.")
 
         # Add detection's associated events to the response
         if include_events:
@@ -872,10 +1147,13 @@ class FncApiClient:
             for detection in response['detections']:
                 total += 1
                 try:
+                    ctx.record_metric(MetricName.DETECTION_EVENTS_REQUESTED)
                     events = self._get_detection_events(detection['uuid'])
+                    ctx.record_metric(MetricName.DETECTION_EVENTS_RETRIEVED, len(events))
                     total_events = total_events + len(events)
                     detection_events.update({detection['uuid']: events})
                 except FncClientError:
+                    ctx.record_metric(MetricName.DETECTION_EVENTS_FAILED_REQUEST)
                     failed += 1
                     # If the request for associated events fails for a particular detection, we log it but continue with the execution.
                     self.logger.error(f"Detection's events request for {detection['uuid']} failed due to:")
@@ -914,12 +1192,16 @@ class FncApiClient:
         return detection_events
 
     def _get_detections(self, args: Dict) -> Dict:
+        args = args or {}
         start_date = args.get('created_or_shared_start_date', '')
         end_date = args.get('created_or_shared_end_date', '')
         offset = args.get('offset', 0)
 
-        self.logger.info(
-            f'Retrieving Detections between {start_date} and {end_date} and offset = {offset}.')
+        if not start_date or not end_date:
+            self.logger.warning("No time window was provided. Every detection will be retrieved.")
+        else:
+            self.logger.info(
+                f'Retrieving Detections between {start_date} and {end_date} and offset = {offset}.')
 
         response = {}
 
@@ -945,6 +1227,7 @@ class FncApiClient:
 
     def continuous_polling(self, context: ApiContext = None, args: Dict = None) -> Iterator[Dict]:
         self.logger.info("Starting continuous polling execution.")
+
         args = args.copy() or {}
         polling_args = {}
 
@@ -953,7 +1236,9 @@ class FncApiClient:
                 "No context has been provided. The provided start date ( 7 days ago by default) will be used.")
             self.logger.info(
                 "The context is required to keep track of the latest checkpoint to avoid missing or duplicated detections.")
+
         context = context or ApiContext()
+        context.record_metric(MetricName.CONTINUOUS_POLLING_EXECUTION)
 
         response = {}
 
@@ -965,7 +1250,7 @@ class FncApiClient:
             try:
                 # Prepare the arguments to be used for requesting detections
                 polling_args = self._prepare_continuous_polling(
-                    context=context, args=args)
+                    context=context, args=args, limit=limit)
 
                 # Update context with the latest used arguments
                 context.update_polling_args(args=polling_args)
@@ -974,14 +1259,18 @@ class FncApiClient:
 
                 if is_limited and not limit_checked:
                     limit_checked = True
+                    context.record_metric(MetricName.DETECTIONS_REQUESTED)
+                    context.record_metric(MetricName.DETECTIONS_LIMIT_VERIFIED)
                     self._check_if_limit_is_overpassed(polling_args=polling_args, limit=limit)
 
                 # Request detections
+                context.record_metric(MetricName.DETECTIONS_REQUESTED)
                 response = self._get_detections(polling_args.copy())
 
                 if 'detections' in response and len(response['detections']) > 0:
+                    context.record_metric(MetricName.DETECTIONS_RETRIEVED, len(response['detections']))
                     # Process the response enriching it if requested
-                    self._process_response(response=response, args=args)
+                    self._process_response(ctx=context, response=response, args=args)
 
                     offset = polling_args.get('offset', 0)
                     polling_args['offset'] = offset + len(response['detections'])
@@ -991,15 +1280,25 @@ class FncApiClient:
                 yield response
 
             except FncClientError as e:
-                self.logger.error(
-                    "Detections polling failed. " +
-                    "If a context was provided, the arguments used for the latest call will be in the Context's polling_args field.")
                 error_message = 'Detections cannot be pulled due to:'
                 if e.error_type != ErrorType.POLLING_EMPTY_TIME_WINDOW_ERROR:
+                    self.logger.error(
+                        "Detections polling failed. " +
+                        "If a context was provided, the arguments used for the latest call will be in the Context's polling_args field.")
+
                     self.logger.error(f"{error_message} \n {str(e)}")
                     # self.logger.error(traceback.format_exc())
                     raise e
+                elif e.error_type != ErrorType.POLLING_LIMIT_OVERPASSED:
+                    # At this point, the polling history was cut short to limit the response size and processing time. The already
+                    # retrieved piece will be returned and it will be resumed in the next iteration.
+                    self.logger.info("The polling history was cut short due to limit being reached. It will be resumed at next iteration.")
+                    self.logger.debug(f"{error_message} \n {str(e)}")
+                    yield response
+                    return
                 else:
+                    if e.is_request_error(e.error_type):
+                        context.record_metric(MetricName.DETECTIONS_FAILED_REQUEST)
                     self.logger.info(f"{error_message} \n {str(e)}")
                     yield response
                     return
@@ -1065,6 +1364,7 @@ class FncApiClient:
 
         context = ApiContext()
         context.update_checkpoint(checkpoint=checkpoint)
+        context.set_entity_details_cache(history_context.get_entity_details_cache())
         self.logger.info(f"Start checkpoint set to: {checkpoint}")
 
         return history_context, context
@@ -1079,7 +1379,6 @@ class FncApiClient:
             )
 
         # Copy the Arguments dictionary and update the history time window
-        args = args.copy()
         history = context.get_history()
 
         now = datetime.now(tz=timezone.utc)
@@ -1090,6 +1389,8 @@ class FncApiClient:
         end_date = str_to_utc_datetime(end_date_str)
 
         # If the there is no history to pull we return
+        if end_date < start_date:
+            start_date = end_date
         if end_date == start_date:
             self.get_logger().info(
                 f"No history to be polled (start_date= {start_date_str} and end_date= {end_date_str}). ")
@@ -1111,7 +1412,14 @@ class FncApiClient:
 
         # Required to check if enrichment is needed. If enrichtment is not needed, no extra API call need to be performed
         # and we can retrieve all the detections without caring for the limit
-        need_enrichment = self._get_as_bool(args.get('include_events'))
+        include_events = self._get_as_bool(args.get('include_events'))
+
+        fetch_pdns: bool = self._get_as_bool(args.get('include_pdns'))
+        fetch_dhcp: bool = self._get_as_bool(args.get('include_dhcp'))
+        fetch_vt: bool = self._get_as_bool(args.get('include_vt'))
+
+        include_entities = fetch_pdns or fetch_dhcp or fetch_vt
+        need_enrichment = include_events or include_entities
         limit = 0
 
         # Start delta as the lesser of 1 day and the entire history time window
@@ -1124,7 +1432,7 @@ class FncApiClient:
         if delta > timedelta(hours=1) and need_enrichment:
             previous_checkpoint = start_date_str
 
-            limit = args.get('limit', 0)
+            args['limit'] = args.get('limit', 300)
             ed = start_date + delta
             self.get_logger().debug(f"Enrichment is required so that the limit {limit} will be applied to every iteration.")
         else:
@@ -1151,7 +1459,7 @@ class FncApiClient:
 
                     self.get_logger().info("Polling next piece of the historical data.")
                     count = 0
-                    for detections in self.continuous_polling(context=context, args=args):
+                    for detections in self.continuous_polling(context=context, args=args.copy()):
                         # we pull detections for the current piece and update the limit appropriately
 
                         count += len(detections.get('detections', []))
@@ -1163,6 +1471,11 @@ class FncApiClient:
 
                     previous_checkpoint = context.get_checkpoint()
                     context.update_checkpoint(args['end_date'])
+                    # args['start_date'] = context.get_checkpoint()
+                    # history = context.get_history()
+                    # history['start_date'] = args['start_date']
+                    # context.update_history(history=history)
+                    # context.clear_args()
 
                     is_done = delta != interval
                     delta = interval
