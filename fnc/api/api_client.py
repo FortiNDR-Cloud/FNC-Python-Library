@@ -1153,7 +1153,10 @@ class FncApiClient:
 
             for detection in response['detections']:
                 entity = detection['device_ip']
-                ent_det_map[entity] = [detection] if entity not in ent_det_map else ent_det_map[entity].extend(detection)
+                if entity not in ent_det_map or not ent_det_map[entity]:
+                    ent_det_map[entity] = [detection]
+                else:
+                    ent_det_map[entity].append(detection)
 
                 if fetch_annotations:
                     ent = {}
