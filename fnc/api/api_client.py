@@ -7,29 +7,10 @@ from typing import Any, Dict, Iterator, List, Tuple, Union
 
 from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
 
-from fnc.api.endpoints import (
-    DetectionApi,
-    Endpoint,
-    EndpointKey,
-    EntityApi,
-    FncApi,
-    SensorApi,
-)
-from fnc.global_variables import (
-    CLIENT_DEFAULT_DOMAIN,
-    CLIENT_DEFAULT_USER_AGENT,
-    CLIENT_MAX_AGE_HOURS,
-    CLIENT_NAME,
-    CLIENT_PROTOCOL,
-    CLIENT_VERSION,
-    DEFAULT_DATE_FORMAT,
-    POLLING_DEFAULT_DELAY,
-    POLLING_MAX_DETECTION_EVENTS,
-    POLLING_MAX_DETECTIONS,
-    REQUEST_DEFAULT_TIMEOUT,
-    REQUEST_DEFAULT_VERIFY,
-    REQUEST_MAXIMUM_RETRY_ATTEMPT,
-)
+from fnc.api.endpoints import DetectionApi, Endpoint, EndpointKey, EntityApi, FncApi, SensorApi
+from fnc.global_variables import (CLIENT_DEFAULT_DOMAIN, CLIENT_DEFAULT_USER_AGENT, CLIENT_MAX_AGE_HOURS, CLIENT_NAME, CLIENT_PROTOCOL,
+                                  CLIENT_VERSION, DEFAULT_DATE_FORMAT, POLLING_DEFAULT_DELAY, POLLING_MAX_DETECTION_EVENTS,
+                                  POLLING_MAX_DETECTIONS, REQUEST_DEFAULT_TIMEOUT, REQUEST_DEFAULT_VERIFY, REQUEST_MAXIMUM_RETRY_ATTEMPT)
 from fnc.utils import datetime_to_utc_str, str_to_utc_datetime
 
 from ..errors import ErrorMessages, ErrorType, FncClientError
@@ -1146,12 +1127,14 @@ class FncApiClient:
             annotations_args = {}
             ent_det_map = {}
 
-            if fetch_annotations:
-                if args["account_uuid"]:
-                    annotations_args["account_uuid"] = args["account_uuid"]
-                annotations_args["entities"] = []
-
             for detection in response['detections']:
+                detection_account = detection["account_uuid"] or args["account_uuid"]
+                if fetch_annotations and detection_account not in annotations_args:
+                    annotations_args[detection_account] = {
+                        "account_uuid": detection_account,
+                        "entities": []
+                    }
+
                 entity = detection['device_ip']
                 if entity not in ent_det_map or not ent_det_map[entity]:
                     ent_det_map[entity] = [detection]
@@ -1162,13 +1145,13 @@ class FncApiClient:
                     ent = {}
                     ent["entity"] = entity
                     ent["entity_type"] = "ip"
-                    annotations_args["entities"].append(ent)
+                    annotations_args[detection_account]["entities"].append(ent)
 
                 # Add the PDNS and DHCP information if requested
                 entity_info = self.get_entity_information(
                     ctx=ctx,
                     entity=entity,
-                    account_uuid=args['account_uuid'],
+                    account_uuid=detection_account,
                     fetch_dhcp=fetch_dhcp,
                     fetch_pdns=fetch_pdns,
                     fetch_vt=fetch_vt
@@ -1178,17 +1161,18 @@ class FncApiClient:
             if fetch_annotations:
                 self.logger.debug("Fetching entities' annotations.")
                 # The endpoints implementation expect arguments as string
-                annotations_args["entities"] = json.dumps(annotations_args["entities"])
-                annotations_data = self.call_endpoint(endpoint=EndpointKey.GET_ENTITY_ANNOTATIONS, args=annotations_args)
-                annotations: List = annotations_data.get('entity_annotations', [])
+                for _, ant_args in annotations_args.items():
+                    ant_args["entities"] = json.dumps(ant_args["entities"])
+                    annotations_data = self.call_endpoint(endpoint=EndpointKey.GET_ENTITY_ANNOTATIONS, args=ant_args)
+                    annotations: List = annotations_data.get('entity_annotations', [])
 
-                for annotation in annotations:
-                    if "entity" not in annotation or "entity" not in annotation["entity"]:
-                        continue
-                    annotated_entity = annotation["entity"]["entity"]
-                    to_be_updated = ent_det_map[annotated_entity] if annotated_entity in ent_det_map and ent_det_map[annotated_entity] else []
-                    for det in to_be_updated:
-                        det["annotations"] = annotation["annotations"]
+                    for annotation in annotations:
+                        if "entity" not in annotation or "entity" not in annotation["entity"]:
+                            continue
+                        annotated_entity = annotation["entity"]["entity"]
+                        to_be_updated = ent_det_map[annotated_entity] if annotated_entity in ent_det_map and ent_det_map[annotated_entity] else []
+                        for det in to_be_updated:
+                            det["annotations"] = annotation["annotations"]
 
                 self.logger.debug(
                     "Entities' annotations successfully retrieved.")
