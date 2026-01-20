@@ -7,10 +7,29 @@ from typing import Any, Dict, Iterator, List, Tuple, Union
 
 from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
 
-from fnc.api.endpoints import DetectionApi, Endpoint, EndpointKey, EntityApi, FncApi, SensorApi
-from fnc.global_variables import (CLIENT_DEFAULT_DOMAIN, CLIENT_DEFAULT_USER_AGENT, CLIENT_MAX_AGE_HOURS, CLIENT_NAME, CLIENT_PROTOCOL,
-                                  CLIENT_VERSION, DEFAULT_DATE_FORMAT, POLLING_DEFAULT_DELAY, POLLING_MAX_DETECTION_EVENTS,
-                                  POLLING_MAX_DETECTIONS, REQUEST_DEFAULT_TIMEOUT, REQUEST_DEFAULT_VERIFY, REQUEST_MAXIMUM_RETRY_ATTEMPT)
+from fnc.api.endpoints import (
+    DetectionApi,
+    Endpoint,
+    EndpointKey,
+    EntityApi,
+    FncApi,
+    SensorApi,
+)
+from fnc.global_variables import (
+    CLIENT_DEFAULT_DOMAIN,
+    CLIENT_DEFAULT_USER_AGENT,
+    CLIENT_MAX_AGE_HOURS,
+    CLIENT_NAME,
+    CLIENT_PROTOCOL,
+    CLIENT_VERSION,
+    DEFAULT_DATE_FORMAT,
+    POLLING_DEFAULT_DELAY,
+    POLLING_MAX_DETECTION_EVENTS,
+    POLLING_MAX_DETECTIONS,
+    REQUEST_DEFAULT_TIMEOUT,
+    REQUEST_DEFAULT_VERIFY,
+    REQUEST_MAXIMUM_RETRY_ATTEMPT,
+)
 from fnc.utils import datetime_to_utc_str, str_to_utc_datetime
 
 from ..errors import ErrorMessages, ErrorType, FncClientError
@@ -1084,6 +1103,11 @@ class FncApiClient:
         fetch_pdns: bool = self._get_as_bool(args.get('include_pdns'))
         fetch_dhcp: bool = self._get_as_bool(args.get('include_dhcp'))
         fetch_vt: bool = self._get_as_bool(args.get('include_vt'))
+
+        fetch_events_pdns: bool = include_events and fetch_pdns
+        fetch_events_dhcp: bool = include_events and fetch_dhcp
+        fetch_events_vt: bool = include_events and fetch_vt
+
         fetch_annotations: bool = self._get_as_bool(args.get('include_annotations'))
 
         include_entities = fetch_pdns or fetch_dhcp or fetch_vt or fetch_annotations
@@ -1193,6 +1217,34 @@ class FncApiClient:
                     ctx.record_metric(MetricName.DETECTION_EVENTS_RETRIEVED, len(events))
                     total_events = total_events + len(events)
                     detection_events.update({detection['uuid']: events})
+                    if fetch_events_pdns:
+                        for e in events:
+                            event: dict = e['event']
+                            # Add the PDNS and DHCP information if requested
+                            src_entity_ip = event['src']['ip'] if 'src' in event else event['src_ip']
+                            src_entity_key = 'src' if 'src' in event else event['src_ip_enrichments']
+                            entity_info = self.get_entity_information(
+                                ctx=ctx,
+                                entity=src_entity_ip,
+                                account_uuid=detection_account,
+                                fetch_dhcp=fetch_events_dhcp,
+                                fetch_pdns=fetch_events_pdns,
+                                fetch_vt=fetch_events_vt
+                            )
+                            event[src_entity_key].update(entity_info)
+
+                            dst_entity_ip = event['dst']['ip'] if 'dst' in event else event['dst_ip']
+                            dst_entity_key = 'dst' if 'dst' in event else event['dst_ip_enrichments']
+                            entity_info = self.get_entity_information(
+                                ctx=ctx,
+                                entity=dst_entity_ip,
+                                account_uuid=detection_account,
+                                fetch_dhcp=fetch_events_dhcp,
+                                fetch_pdns=fetch_events_pdns,
+                                fetch_vt=fetch_events_vt
+                            )
+                            event[dst_entity_key].update(entity_info)
+
                 except FncClientError:
                     ctx.record_metric(MetricName.DETECTION_EVENTS_FAILED_REQUEST)
                     failed += 1
