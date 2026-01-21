@@ -1221,29 +1221,31 @@ class FncApiClient:
                         for e in events:
                             event: dict = e['event']
                             # Add the PDNS and DHCP information if requested
-                            src_entity_ip = event['src']['ip'] if 'src' in event else event['src_ip']
-                            src_entity_key = 'src' if 'src' in event else event['src_ip_enrichments']
-                            entity_info = self.get_entity_information(
-                                ctx=ctx,
-                                entity=src_entity_ip,
-                                account_uuid=detection_account,
-                                fetch_dhcp=fetch_events_dhcp,
-                                fetch_pdns=fetch_events_pdns,
-                                fetch_vt=fetch_events_vt
-                            )
-                            event[src_entity_key].update(entity_info)
+                            if ('src' in event and event['src']) or ('src_ip' in event and event['src_ip']):
+                                src_entity_ip = event['src']['ip'] if 'src' in event else event['src_ip']
+                                src_entity_key = 'src' if 'src' in event else event['src_ip_enrichments']
+                                entity_info = self.get_entity_information(
+                                    ctx=ctx,
+                                    entity=src_entity_ip,
+                                    account_uuid=detection_account,
+                                    fetch_dhcp=fetch_events_dhcp,
+                                    fetch_pdns=fetch_events_pdns,
+                                    fetch_vt=fetch_events_vt
+                                )
+                                event[src_entity_key].update(entity_info)
 
-                            dst_entity_ip = event['dst']['ip'] if 'dst' in event else event['dst_ip']
-                            dst_entity_key = 'dst' if 'dst' in event else event['dst_ip_enrichments']
-                            entity_info = self.get_entity_information(
-                                ctx=ctx,
-                                entity=dst_entity_ip,
-                                account_uuid=detection_account,
-                                fetch_dhcp=fetch_events_dhcp,
-                                fetch_pdns=fetch_events_pdns,
-                                fetch_vt=fetch_events_vt
-                            )
-                            event[dst_entity_key].update(entity_info)
+                            if ('dst' in event and event['dst']) or ('dst_ip' in event and event['dst_ip']):
+                                dst_entity_ip = event['dst']['ip'] if 'dst' in event else event['dst_ip']
+                                dst_entity_key = 'dst' if 'dst' in event else event['dst_ip_enrichments']
+                                entity_info = self.get_entity_information(
+                                    ctx=ctx,
+                                    entity=dst_entity_ip,
+                                    account_uuid=detection_account,
+                                    fetch_dhcp=fetch_events_dhcp,
+                                    fetch_pdns=fetch_events_pdns,
+                                    fetch_vt=fetch_events_vt
+                                )
+                                event[dst_entity_key].update(entity_info)
 
                 except FncClientError:
                     ctx.record_metric(MetricName.DETECTION_EVENTS_FAILED_REQUEST)
