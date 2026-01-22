@@ -1,3 +1,4 @@
+import json
 from enum import Enum, auto
 from typing import Dict, List, Tuple, Union
 
@@ -10,7 +11,7 @@ from ..logger import FncClientLogger
 __all__ = [
     'EndpointKey', 'Endpoint',
     'GetSensors', 'GetDevices', 'GetTask', 'GetTasks', 'CreateTask', 'GetTelemetryEvents', 'GetTelemetryPacketstats', 'GetTelemetryNetwork',
-    'GetEntitySummary', 'GetEntityPdns', 'GetEntityDhcp', 'GetEntityVirusTotal', 'GetEntityFile',
+    'GetEntitySummary', 'GetEntityAnnotations', 'GetEntityPdns', 'GetEntityDhcp', 'GetEntityVirusTotal', 'GetEntityFile',
     'GetDetections', 'ResolveDetection', 'GetDetectionEvents', 'GetRules', 'GetRule', 'CreateRule', 'GetRuleEvents',
     'FncApi', 'SensorApi', 'DetectionApi', 'EntityApi'
 ]
@@ -49,6 +50,7 @@ class EndpointKey (EndpointEnum):
     GET_ENTITY_SUMMARY = auto()
     GET_ENTITY_PDNS = auto()
     GET_ENTITY_DHCP = auto()
+    GET_ENTITY_ANNOTATIONS = auto()
     GET_ENTITY_FILE = auto()
     GET_ENTITY_VIRUS_TOTAL = auto()
 
@@ -167,12 +169,14 @@ class Endpoint:
             to_evaluate=to_evaluate, args=args)
 
         # Get the args to be added in the body
+        to_evaluate = self.get_body_args()
         final_args['body_args'] = self._evaluate_arguments(
-            to_evaluate=self.get_body_args(), args=args)
+            to_evaluate=to_evaluate, args=args)
 
         # Get the args to be added in the url
+        to_evaluate = self.get_url_args()
         final_args['url_args'] = self._evaluate_arguments(
-            to_evaluate=self.get_url_args(), args=args)
+            to_evaluate=to_evaluate, args=args)
 
         # Get the control arguments defined in the endpoint
         final_args['control_args'] = self.get_control_args()
@@ -207,9 +211,13 @@ class Endpoint:
                     arg_def: ArgumentDefinition = to_evaluate[arg]
 
                     # if argument allow multiple we need to provide a list of values instead of a comma separated str
+                    if arg_def.is_nested() and isinstance(value, str):
+                        value = json.loads(value.strip())
+
                     if arg_def.allow_multiple() and isinstance(value, str):
                         value = value.split(',')
                         value = list(v.strip() for v in value)
+
                     res[arg] = value
 
         return res
@@ -400,17 +408,22 @@ class ArgumentDefinition:
     _required: bool
     _multiple: bool
     _allowed: List
+    _nested: bool
 
-    def __init__(self, required: bool, multiple: bool, allowed: List = None):
+    def __init__(self, required: bool = False, multiple: bool = False, nested=False, allowed: List = None):
         self._required = required
         self._multiple = multiple
         self._allowed = allowed
+        self._nested = nested
 
     def is_valid(self, values) -> bool:
         return self.is_allowed(values)
 
     def is_required(self) -> bool:
         return self._required
+
+    def is_nested(self) -> bool:
+        return self._nested
 
     def allow_multiple(self) -> bool:
         return self._multiple
@@ -793,6 +806,30 @@ class GetEntityDhcp(Endpoint):
         return ['dhcp']
 
 
+class GetEntityAnnotations(Endpoint):
+    version: str = 'v2'
+    endpoint: str = 'annotation_bulk/annotation_by_entity'
+
+    default_values: Dict = {}
+
+    def get_endpoint_key(self) -> EndpointKey:
+        return EndpointKey.GET_ENTITY_ANNOTATIONS
+
+    def get_control_args(self) -> Dict:
+        return {
+            'method': 'POST'
+        }
+
+    def get_body_args(self) -> Dict:
+        return {
+            'account_uuid': ArgumentDefinition(required=False, multiple=False),
+            'entities': ArgumentDefinition(required=False, nested=True),
+        }
+
+    def get_response_fields(self) -> List[str]:
+        return ['entity_annotations']
+
+
 class GetEntityFile(Endpoint):
     version: str = 'v1'
     endpoint: str = 'entity/{entity}/file'
@@ -1120,6 +1157,7 @@ class EntityApi(FncApi):
     def get_supported_endpoints(self) -> Dict:
         return {
             EndpointKey.GET_ENTITY_SUMMARY: GetEntitySummary(),
+            EndpointKey.GET_ENTITY_ANNOTATIONS: GetEntityAnnotations(),
             EndpointKey.GET_ENTITY_PDNS: GetEntityPdns(),
             EndpointKey.GET_ENTITY_DHCP: GetEntityDhcp(),
             EndpointKey.GET_ENTITY_VIRUS_TOTAL: GetEntityVirusTotal(),
