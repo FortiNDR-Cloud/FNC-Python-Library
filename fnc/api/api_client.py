@@ -7,29 +7,10 @@ from typing import Any, Dict, Iterator, List, Tuple, Union
 
 from requests.exceptions import ConnectionError, HTTPError, RequestException, Timeout
 
-from fnc.api.endpoints import (
-    DetectionApi,
-    Endpoint,
-    EndpointKey,
-    EntityApi,
-    FncApi,
-    SensorApi,
-)
-from fnc.global_variables import (
-    CLIENT_DEFAULT_DOMAIN,
-    CLIENT_DEFAULT_USER_AGENT,
-    CLIENT_MAX_AGE_HOURS,
-    CLIENT_NAME,
-    CLIENT_PROTOCOL,
-    CLIENT_VERSION,
-    DEFAULT_DATE_FORMAT,
-    POLLING_DEFAULT_DELAY,
-    POLLING_MAX_DETECTION_EVENTS,
-    POLLING_MAX_DETECTIONS,
-    REQUEST_DEFAULT_TIMEOUT,
-    REQUEST_DEFAULT_VERIFY,
-    REQUEST_MAXIMUM_RETRY_ATTEMPT,
-)
+from fnc.api.endpoints import DetectionApi, Endpoint, EndpointKey, EntityApi, FncApi, SensorApi
+from fnc.global_variables import (CLIENT_DEFAULT_DOMAIN, CLIENT_DEFAULT_USER_AGENT, CLIENT_MAX_AGE_HOURS, CLIENT_NAME, CLIENT_PROTOCOL,
+                                  CLIENT_VERSION, DEFAULT_DATE_FORMAT, POLLING_DEFAULT_DELAY, POLLING_MAX_DETECTION_EVENTS,
+                                  POLLING_MAX_DETECTIONS, REQUEST_DEFAULT_TIMEOUT, REQUEST_DEFAULT_VERIFY, REQUEST_MAXIMUM_RETRY_ATTEMPT)
 from fnc.utils import datetime_to_utc_str, str_to_utc_datetime
 
 from ..errors import ErrorMessages, ErrorType, FncClientError
@@ -1109,6 +1090,7 @@ class FncApiClient:
         fetch_events_vt: bool = include_events and fetch_vt
 
         fetch_annotations: bool = self._get_as_bool(args.get('include_annotations'))
+        fetch_events_annotations: bool = include_events and fetch_annotations
 
         include_entities = fetch_pdns or fetch_dhcp or fetch_vt or fetch_annotations
 
@@ -1143,17 +1125,20 @@ class FncApiClient:
         self.logger.info(
             "Rules' information successfully added to the detections.")
 
+        # dictionary holding the arguments required for the annotations bulk request
+        annotations_args = {}
+        # create a dictionary to match entities to the detection and/or events where they need to be enriched with annotations
+        ent_det_map = {}
+
         # Enrich detection with additional entity's information
         if include_entities:
             self.logger.debug(
                 " Enriching detection with additional entity's information.")
 
-            annotations_args = {}
-            ent_det_map = {}
-
             for detection in response['detections']:
                 detection_account = detection["account_uuid"] or args["account_uuid"]
                 if fetch_annotations and detection_account not in annotations_args:
+                    # Preparing information for the arguments required for the annotations request
                     annotations_args[detection_account] = {
                         "account_uuid": detection_account,
                         "entities": []
@@ -1166,12 +1151,13 @@ class FncApiClient:
                     ent_det_map[entity].append(detection)
 
                 if fetch_annotations:
+                    # Preparing information for the arguments required for the annotations request
                     ent = {}
                     ent["entity"] = entity
                     ent["entity_type"] = "ip"
                     annotations_args[detection_account]["entities"].append(ent)
 
-                # Add the PDNS and DHCP information if requested
+                # Add the PDNS, DHCP and VT information if requested (Only those that were requested will be retrieved)
                 entity_info = self.get_entity_information(
                     ctx=ctx,
                     entity=entity,
@@ -1182,25 +1168,6 @@ class FncApiClient:
                 )
                 detection.update(entity_info)
 
-            if fetch_annotations:
-                self.logger.debug("Fetching entities' annotations.")
-                # The endpoints implementation expect arguments as string
-                for _, ant_args in annotations_args.items():
-                    ant_args["entities"] = json.dumps(ant_args["entities"])
-                    annotations_data = self.call_endpoint(endpoint=EndpointKey.GET_ENTITY_ANNOTATIONS, args=ant_args)
-                    annotations: List = annotations_data.get('entity_annotations', [])
-
-                    for annotation in annotations:
-                        if "entity" not in annotation or "entity" not in annotation["entity"]:
-                            continue
-                        annotated_entity = annotation["entity"]["entity"]
-                        to_be_updated = ent_det_map[annotated_entity] if annotated_entity in ent_det_map and ent_det_map[annotated_entity] else []
-                        for det in to_be_updated:
-                            det["annotations"] = annotation["annotations"]
-
-                self.logger.debug(
-                    "Entities' annotations successfully retrieved.")
-
             self.logger.info(
                 "Entity's information successfully added to the detections.")
 
@@ -1209,7 +1176,15 @@ class FncApiClient:
             self.logger.debug("Adding Detection's associated events.")
             failed = 0
             total = 0
+
             for detection in response['detections']:
+                detection_account = detection["account_uuid"] or args["account_uuid"]
+                if fetch_annotations and detection_account not in annotations_args:
+                    # Preparing information for the arguments required for the annotations request
+                    annotations_args[detection_account] = {
+                        "account_uuid": detection_account,
+                        "entities": []
+                    }
                 total += 1
                 try:
                     ctx.record_metric(MetricName.DETECTION_EVENTS_REQUESTED)
@@ -1217,13 +1192,34 @@ class FncApiClient:
                     ctx.record_metric(MetricName.DETECTION_EVENTS_RETRIEVED, len(events))
                     total_events = total_events + len(events)
                     detection_events.update({detection['uuid']: events})
-                    if fetch_events_pdns:
-                        for e in events:
-                            event: dict = e['event']
-                            # Add the PDNS and DHCP information if requested
-                            if ('src' in event and event['src']) or ('src_ip' in event and event['src_ip']):
-                                src_entity_ip = event['src']['ip'] if 'src' in event else event['src_ip']
-                                src_entity_key = 'src' if 'src' in event else event['src_ip_enrichments']
+
+                    # Check if any entity's enrichment is required for the events
+                    if not include_entities:
+                        continue
+
+                    # We need to include some additional entities' information to the associated events
+                    self.logger.debug(
+                        f" Enriching detection {detection['uuid']}'s associated events with additional entity's information.")
+                    for e in events:
+                        event: dict = e['event']
+
+                        src_entity_ip = ''
+                        src_entity_key = ''
+                        dst_entity_ip = ''
+                        dst_entity_key = ''
+
+                        # Add the PDNS and DHCP information if requested
+                        if ('src' in event and event['src'] not in (None, '')) or ('src_ip' in event and event['src_ip'] not in (None, '')):
+                            src_entity_ip = event['src']['ip'] if 'src' in event else event['src_ip']
+                            src_entity_key = 'src' if 'src' in event else 'src_ip_enrichments'
+
+                        if ('dst' in event and event['dst'] not in (None, '')) or ('dst_ip' in event and event['dst_ip'] not in (None, '')):
+                            dst_entity_ip = event['dst']['ip'] if 'dst' in event else event['dst_ip']
+                            dst_entity_key = 'dst' if 'dst' in event else 'dst_ip_enrichments'
+
+                        if include_entities:
+                            # Add the PDNS, DHCP and VT information if requested (Only those that were requested will be retrieved)
+                            if src_entity_key:
                                 entity_info = self.get_entity_information(
                                     ctx=ctx,
                                     entity=src_entity_ip,
@@ -1232,11 +1228,10 @@ class FncApiClient:
                                     fetch_pdns=fetch_events_pdns,
                                     fetch_vt=fetch_events_vt
                                 )
-                                event[src_entity_key].update(entity_info)
+                                if src_entity_key in event and event[src_entity_key]:
+                                    event[src_entity_key].update(entity_info)
 
-                            if ('dst' in event and event['dst']) or ('dst_ip' in event and event['dst_ip']):
-                                dst_entity_ip = event['dst']['ip'] if 'dst' in event else event['dst_ip']
-                                dst_entity_key = 'dst' if 'dst' in event else event['dst_ip_enrichments']
+                            if dst_entity_key:
                                 entity_info = self.get_entity_information(
                                     ctx=ctx,
                                     entity=dst_entity_ip,
@@ -1245,7 +1240,31 @@ class FncApiClient:
                                     fetch_pdns=fetch_events_pdns,
                                     fetch_vt=fetch_events_vt
                                 )
-                                event[dst_entity_key].update(entity_info)
+                                if dst_entity_key in event and event[dst_entity_key]:
+                                    event[dst_entity_key].update(entity_info)
+
+                        if fetch_events_annotations:
+                            # Preparing information for the arguments required for the annotations request
+                            if src_entity_key:
+                                if src_entity_ip not in ent_det_map or not ent_det_map[src_entity_ip]:
+                                    ent_det_map[src_entity_ip] = [event[src_entity_key]]
+                                else:
+                                    ent_det_map[src_entity_ip].append(event[src_entity_key])
+
+                                ent = {}
+                                ent["entity"] = src_entity_ip
+                                ent["entity_type"] = "ip"
+                                annotations_args[detection_account]["entities"].append(ent)
+
+                            if dst_entity_key:
+                                if dst_entity_ip not in ent_det_map or not ent_det_map[dst_entity_ip]:
+                                    ent_det_map[dst_entity_ip] = [event[dst_entity_key]]
+                                else:
+                                    ent_det_map[dst_entity_ip].append(event[dst_entity_key])
+                                ent = {}
+                                ent["entity"] = dst_entity_ip
+                                ent["entity_type"] = "ip"
+                                annotations_args[detection_account]["entities"].append(ent)
 
                 except FncClientError:
                     ctx.record_metric(MetricName.DETECTION_EVENTS_FAILED_REQUEST)
@@ -1254,8 +1273,25 @@ class FncApiClient:
                     self.logger.error(f"Detection's events request for {detection['uuid']} failed due to:")
                     self.logger.error(traceback.format_exc())
 
-            self.logger.info(f"{total - failed} out of {total}) detections were successfully processed.")
-            self.logger.info(f"{total_events} associated events were successfully added to the response.")
+        if fetch_annotations:
+            self.logger.debug("Fetching entities' annotations.")
+            # The endpoints implementation expect arguments as string
+            for _, ant_args in annotations_args.items():
+                ant_args["entities"] = json.dumps(ant_args["entities"])
+                annotations_data = self.call_endpoint(endpoint=EndpointKey.GET_ENTITY_ANNOTATIONS, args=ant_args)
+                annotations: List = annotations_data.get('entity_annotations', [])
+
+                for annotation in annotations:
+                    if "entity" not in annotation or "entity" not in annotation["entity"]:
+                        continue
+                    annotated_entity = annotation["entity"]["entity"]
+                    to_be_updated = ent_det_map[annotated_entity] if annotated_entity in ent_det_map and ent_det_map[annotated_entity] else [
+                    ]
+                    for det in to_be_updated:
+                        det["annotations"] = annotation["annotations"]
+
+        self.logger.info(f"{total - failed} out of {total}) detections were successfully processed.")
+        self.logger.info(f"{total_events} associated events were successfully added to the response.")
 
         response.update({'events': detection_events})
 
